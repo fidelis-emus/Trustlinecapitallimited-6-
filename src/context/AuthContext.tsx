@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
 // Define the API base URL from .env
-const API = import.meta.env.VITE_API_URL;
+const API = (import.meta as any).env?.VITE_API_URL || "";
 
 interface AuthContextType {
   user: User | null;
@@ -30,21 +30,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fetch the current admin profile from the backend
   const refreshUser = async () => {
-    if (!token) return;
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${API}/api/admin/profile`, {
+      console.log('refreshUser: calling admin/profile with token', token?.substring(0, 8));
+      const response = await fetch(`${API || ''}/api/admin/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      // Check for HTTP errors
+      console.log('refreshUser: response', response.status, response.statusText);
       if (!response.ok) {
+        console.error('refreshUser: non-OK response', await response.text());
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('refreshUser: data', data);
       if (data.success) {
         setUser(data.user);
       } else {
+        console.error('refreshUser: data.success false', data);
         logout();
       }
     } catch (error) {

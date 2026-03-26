@@ -93,7 +93,7 @@ const TAILORED_INVESTMENTS = [
 ];
 
 export default function App() {
-  const { user: authUser, logout: authLogout } = useAuth();
+  const { user: authUser, logout: authLogout, isLoading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isAdminPath = location.pathname.startsWith("/admin");
@@ -346,7 +346,9 @@ export default function App() {
           {/* Admin Routes */}
           <Route path="/admin/login" element={<AdminLoginPage settings={settings} />} />
           <Route path="/admin" element={
-            authUser?.role === 'admin' ? (
+            authLoading ? (
+              <div className="min-h-[80vh] flex items-center justify-center">Loading admin...</div>
+            ) : authUser?.role === 'admin' ? (
               <AdminPanel 
                 products={products} 
                 fetchProducts={fetchProducts} 
@@ -1900,8 +1902,14 @@ function ContactPage({ settings, key }: { settings: SiteSettings, key?: string }
 }
 
 function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: string }) {
-  const { login } = useAuth();
+  const { login, user: authUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (authUser?.role === 'admin') {
+      navigate('/admin', { replace: true });
+    }
+  }, [authUser, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
