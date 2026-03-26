@@ -273,23 +273,21 @@ async function startServer() {
     console.log("--- LOGIN ROUTE HIT ---");
     res.setHeader('Content-Type', 'application/json');
     const { email, password } = req.body;
-    console.log("Login attempt:", { email, password: password ? "***" : "none" });
-
+    console.log("Login attempt:", { email });
+    
     if (!email || !password) {
-      console.log("Login: missing email or password");
       return res.status(400).json({ success: false, error: "Email and password are required" });
     }
 
     try {
       const admin = db.prepare("SELECT * FROM admin WHERE email = ?").get(email.trim().toLowerCase()) as any;
-      console.log("Login: admin found?", admin ? "yes" : "no");
+      console.log("Admin found:", admin ? "Yes" : "No");
       if (admin && await bcrypt.compare(password, admin.password)) {
-        console.log("Login: password match yes");
+        console.log("Password match: Yes");
         const token = jwt.sign({ id: admin.id, email: admin.email, role: 'admin' }, JWT_SECRET);
-        console.log("Login: token generated", token.substring(0, 8) + "...");
         res.json({ success: true, token, admin: { id: admin.id, email: admin.email, role: 'admin' } });
       } else {
-        console.log("Login: password match no");
+        console.log("Password match: No");
         res.status(401).json({ success: false, error: "Invalid admin credentials" });
       }
     } catch (error) {
@@ -304,14 +302,6 @@ async function startServer() {
       return res.status(405).json({ success: false, error: "Method Not Allowed" });
     }
     res.setHeader('Allow', 'POST');
-    res.status(405).json({ success: false, error: "Method Not Allowed" });
-  });
-
-  // Optional global API fallback (respects methods)
-  app.all("/api/*", (req, res) => {
-    if (!req.route) {
-      return res.status(404).json({ success: false, error: "API route not found", path: req.originalUrl, method: req.method });
-    }
     res.status(405).json({ success: false, error: "Method Not Allowed" });
   });
 
@@ -640,6 +630,14 @@ async function startServer() {
   app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, (req, res) => {
     db.prepare("DELETE FROM tailored_investments WHERE id = ?").run(req.params.id);
     res.json({ success: true });
+  });
+
+  // Optional global API fallback (respects methods)
+  app.all("/api/*", (req, res) => {
+    if (!req.route) {
+      return res.status(404).json({ success: false, error: "API route not found", path: req.originalUrl, method: req.method });
+    }
+    res.status(405).json({ success: false, error: "Method Not Allowed" });
   });
 
   // --- VITE MIDDLEWARE ---
