@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
+// Define the API base URL from .env
+const API = import.meta.env.VITE_API_URL;
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -25,12 +28,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token]);
 
+  // Fetch the current admin profile from the backend
   const refreshUser = async () => {
     if (!token) return;
     try {
-      const response = await fetch('/api/admin/profile', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const response = await fetch(`${API}/api/admin/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
+
+      // Check for HTTP errors
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
       const data = await response.json();
       if (data.success) {
         setUser(data.user);
@@ -39,17 +49,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Failed to fetch admin profile:', error);
+      logout();
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Save token and user to state and localStorage
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
     setUser(newUser);
   };
 
+  // Clear token and user
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
