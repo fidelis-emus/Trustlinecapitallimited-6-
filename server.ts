@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -200,6 +201,8 @@ if (newsCount.count === 0) {
 
 async function startServer() {
   const app = express();
+  app.use(cors());
+  app.options("*", cors());
   app.use(express.json());
 
   // Health check
