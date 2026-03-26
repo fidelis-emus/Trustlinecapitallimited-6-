@@ -93,7 +93,7 @@ const TAILORED_INVESTMENTS = [
 ];
 
 export default function App() {
-  const { user: authUser, logout: authLogout, isLoading: authLoading } = useAuth();
+  const { user: authUser, token: authToken, logout: authLogout, isLoading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isAdminPath = location.pathname.startsWith("/admin");
@@ -346,7 +346,7 @@ export default function App() {
           {/* Admin Routes */}
           <Route path="/admin/login" element={<AdminLoginPage settings={settings} />} />
           <Route path="/admin" element={
-            authLoading ? (
+            authLoading || (authToken && !authUser) ? (
               <div className="min-h-[80vh] flex items-center justify-center">Loading admin...</div>
             ) : authUser?.role === 'admin' ? (
               <AdminPanel 
