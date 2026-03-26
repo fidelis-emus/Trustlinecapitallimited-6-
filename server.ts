@@ -249,9 +249,12 @@ async function startServer() {
   // Middleware: Admin
   const authenticateAdmin = (req: any, res: any, next: any) => {
     authenticateToken(req, res, () => {
+      console.log("authenticateAdmin: user role", req.user?.role);
       if (req.user && req.user.role === 'admin') {
+        console.log("authenticateAdmin: admin access granted");
         next();
       } else {
+        console.log("authenticateAdmin: admin access denied");
         res.status(403).json({ success: false, error: "Admin access required" });
       }
     });
@@ -270,21 +273,23 @@ async function startServer() {
     console.log("--- LOGIN ROUTE HIT ---");
     res.setHeader('Content-Type', 'application/json');
     const { email, password } = req.body;
-    console.log("Login attempt:", { email });
-    
+    console.log("Login attempt:", { email, password: password ? "***" : "none" });
+
     if (!email || !password) {
+      console.log("Login: missing email or password");
       return res.status(400).json({ success: false, error: "Email and password are required" });
     }
 
     try {
       const admin = db.prepare("SELECT * FROM admin WHERE email = ?").get(email.trim().toLowerCase()) as any;
-      console.log("Admin found:", admin ? "Yes" : "No");
+      console.log("Login: admin found?", admin ? "yes" : "no");
       if (admin && await bcrypt.compare(password, admin.password)) {
-        console.log("Password match: Yes");
+        console.log("Login: password match yes");
         const token = jwt.sign({ id: admin.id, email: admin.email, role: 'admin' }, JWT_SECRET);
+        console.log("Login: token generated", token.substring(0, 8) + "...");
         res.json({ success: true, token, admin: { id: admin.id, email: admin.email, role: 'admin' } });
       } else {
-        console.log("Password match: No");
+        console.log("Login: password match no");
         res.status(401).json({ success: false, error: "Invalid admin credentials" });
       }
     } catch (error) {
@@ -312,10 +317,14 @@ async function startServer() {
 
   // Admin: Get Profile
   app.get("/api/admin/profile", authenticateAdmin, (req: any, res) => {
+    console.log("--- PROFILE ROUTE HIT ---");
+    console.log("User from token:", req.user);
     const admin = db.prepare("SELECT id, email FROM admin WHERE id = ?").get(req.user.id) as any;
+    console.log("Admin from DB:", admin);
     if (admin) {
       res.json({ success: true, user: { ...admin, role: 'admin' } });
     } else {
+      console.log("Admin not found for id:", req.user.id);
       res.status(404).json({ success: false, error: "Admin not found" });
     }
   });

@@ -37,7 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       console.log('refreshUser: calling admin/profile with token', token?.substring(0, 8));
-      const response = await fetch(`${API || ''}/api/admin/profile`, {
+      const response = await fetch(`/api/admin/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
