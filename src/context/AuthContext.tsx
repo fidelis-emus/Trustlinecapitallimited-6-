@@ -19,7 +19,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
 
-  // Refresh user whenever token changes
   useEffect(() => {
     const init = async () => {
       if (token) {
@@ -29,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     init();
-  }, [token]);
+  }, []);
 
   const refreshUser = async () => {
     if (!token) {
@@ -42,21 +41,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      if (res.status === 401) {
+        // Only log out if token is invalid
+        logout();
+        return;
+      }
+
       if (!res.ok) {
-        // If unauthorized, clear token
-        if (res.status === 401) logout();
-        throw new Error(`Failed to fetch profile: ${res.status}`);
+        console.warn('Profile fetch failed but keeping token', res.status, await res.text());
+        setIsLoading(false);
+        return;
       }
 
       const data = await res.json();
       if (data.success) {
         setUser(data.user);
       } else {
-        logout();
+        console.warn('Profile fetch returned success false, keeping token', data);
       }
     } catch (err) {
-      console.error('refreshUser error:', err);
-      logout();
+      console.error('refreshUser network error, keeping token', err);
     } finally {
       setIsLoading(false);
     }
