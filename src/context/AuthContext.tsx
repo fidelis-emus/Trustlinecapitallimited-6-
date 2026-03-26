@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
-// Define the API base URL from .env
 const API = (import.meta as any).env?.VITE_API_URL || "";
 
 interface AuthContextType {
@@ -17,18 +16,21 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
 
+  // Refresh user whenever token changes
   useEffect(() => {
-    if (token) {
-      refreshUser();
-    } else {
-      setIsLoading(false);
-    }
+    const init = async () => {
+      if (token) {
+        await refreshUser();
+      } else {
+        setIsLoading(false);
+      }
+    };
+    init();
   }, [token]);
 
-  // Fetch the current admin profile from the backend
   const refreshUser = async () => {
     if (!token) {
       setIsLoading(false);
@@ -36,41 +38,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      console.log('refreshUser: calling admin/profile with token', token?.substring(0, 8));
-      const response = await fetch(`${API}/api/admin/profile`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await fetch(`${API}/api/admin/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log('refreshUser: response', response.status, response.statusText);
-      if (!response.ok) {
-        console.error('refreshUser: non-OK response', await response.text());
-        throw new Error(`HTTP error! Status: ${response.status}`);
+      if (!res.ok) {
+        // If unauthorized, clear token
+        if (res.status === 401) logout();
+        throw new Error(`Failed to fetch profile: ${res.status}`);
       }
 
-      const data = await response.json();
-      console.log('refreshUser: data', data);
+      const data = await res.json();
       if (data.success) {
         setUser(data.user);
       } else {
-        console.error('refreshUser: data.success false', data);
         logout();
       }
-    } catch (error) {
-      console.error('Failed to fetch admin profile:', error);
+    } catch (err) {
+      console.error('refreshUser error:', err);
       logout();
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Save token and user to state and localStorage
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
     setUser(newUser);
   };
 
-  // Clear token and user
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
@@ -86,8 +83,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
