@@ -204,6 +204,15 @@ async function startServer() {
   app.use(cors());
   app.options("*", cors());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Debug: log API calls
+  app.use((req, res, next) => {
+    if (req.originalUrl.startsWith('/api')) {
+      console.log(`[API] ${req.method} ${req.originalUrl}`);
+    }
+    next();
+  });
 
   // Health check
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
@@ -282,6 +291,23 @@ async function startServer() {
       console.error("Login error:", error);
       res.status(500).json({ success: false, error: "Login failed" });
     }
+  });
+
+  // Admin: Login method fallback for non-POST
+  app.all("/api/admin/login", (req, res) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ success: false, error: "Method Not Allowed" });
+    }
+    res.setHeader('Allow', 'POST');
+    res.status(405).json({ success: false, error: "Method Not Allowed" });
+  });
+
+  // Optional global API fallback (respects methods)
+  app.all("/api/*", (req, res) => {
+    if (!req.route) {
+      return res.status(404).json({ success: false, error: "API route not found", path: req.originalUrl, method: req.method });
+    }
+    res.status(405).json({ success: false, error: "Method Not Allowed" });
   });
 
   // Admin: Get Profile
