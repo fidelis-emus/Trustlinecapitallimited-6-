@@ -1949,7 +1949,8 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
       if (data.success) {
         const adminData = data.admin;
         login(data.token, { ...adminData, role: 'admin' });
-        navigate("/admin");
+        // Wait for authUser to update before redirecting.
+        // Will be handled by AdminLoginPage useEffect.
       } else {
         setError(data.error || "Invalid admin credentials");
       }
