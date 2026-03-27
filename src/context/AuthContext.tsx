@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
-const API = (import.meta as any).env?.VITE_API_URL || "";
-
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -16,51 +14,66 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const init = async () => {
-      if (token) {
-        await refreshUser();
-      } else {
-        setIsLoading(false);
-      }
-    };
-    init();
-  }, []);
+    if (token) {
+      refreshUser();
+    } else {
+      setIsLoading(false);
+    }
+  }, [token]);
 
   const refreshUser = async () => {
     if (!token) {
+      console.log("[AuthContext] refreshUser - No token, skipping refresh");
       setIsLoading(false);
       return;
     }
-
     try {
-      const res = await fetch(`${API}/api/admin/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
+      console.log("[AuthContext] refreshUser - Fetching profile with token:", token.substring(0, 10) + "...");
+      const response = await fetch('/api/admin/profile', {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
       });
+      
+      console.log("[AuthContext] refreshUser - Response status:", response.status);
+      
+      if (response.status === 405) {
+        console.error("[AuthContext] refreshUser - RECEIVED 405 METHOD NOT ALLOWED. This is unexpected for a GET request.");
+      }
 
-      if (res.status === 401) {
-        // Only log out if token is invalid
+      const text = await response.text();
+      console.log("[AuthContext] refreshUser - Response body (first 100 chars):", text.substring(0, 100));
+      
+      if (!response.ok) {
+        console.warn("[AuthContext] refreshUser - Response not OK, logging out. Status:", response.status);
         logout();
         return;
       }
 
-      if (!res.ok) {
-        console.warn('Profile fetch failed but keeping token', res.status, await res.text());
-        setIsLoading(false);
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("[AuthContext] refreshUser - Failed to parse JSON:", e);
+        logout();
         return;
       }
 
-      const data = await res.json();
       if (data.success) {
+        console.log("[AuthContext] refreshUser - Success for:", data.user.email);
         setUser(data.user);
       } else {
-        console.warn('Profile fetch returned success false, keeping token', data);
+        console.warn("[AuthContext] refreshUser - API returned success:false:", data.error);
+        logout();
       }
-    } catch (err) {
-      console.error('refreshUser network error, keeping token', err);
+    } catch (error) {
+      console.error('[AuthContext] refreshUser - Network or other error:', error);
+      // Don't logout on network error, maybe it's temporary
     } finally {
       setIsLoading(false);
     }
@@ -87,6 +100,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
   return context;
 };

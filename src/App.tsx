@@ -93,7 +93,7 @@ const TAILORED_INVESTMENTS = [
 ];
 
 export default function App() {
-  const { user: authUser, token: authToken, logout: authLogout, isLoading: authLoading } = useAuth();
+  const { user: authUser, logout: authLogout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isAdminPath = location.pathname.startsWith("/admin");
@@ -346,9 +346,7 @@ export default function App() {
           {/* Admin Routes */}
           <Route path="/admin/login" element={<AdminLoginPage settings={settings} />} />
           <Route path="/admin" element={
-            authLoading || (authToken && !authUser) ? (
-              <div className="min-h-[80vh] flex items-center justify-center">Loading admin...</div>
-            ) : authUser?.role === 'admin' ? (
+            authUser?.role === 'admin' ? (
               <AdminPanel 
                 products={products} 
                 fetchProducts={fetchProducts} 
@@ -1902,17 +1900,24 @@ function ContactPage({ settings, key }: { settings: SiteSettings, key?: string }
 }
 
 function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: string }) {
-  const { login, user: authUser } = useAuth();
+  const { login, user, token, isLoading } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (authUser?.role === 'admin') {
-      navigate('/admin', { replace: true });
-    }
-  }, [authUser, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    console.log("[AdminLoginPage] Auth state:", { 
+      hasUser: !!user, 
+      hasToken: !!token, 
+      isLoading,
+      userEmail: user?.email 
+    });
+    if (user && !isLoading) {
+      console.log("[AdminLoginPage] User already logged in, redirecting to /admin");
+      navigate("/admin");
+    }
+  }, [user, token, isLoading, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1931,7 +1936,11 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
       console.log("Login response text:", text);
       
       if (!text) {
-        setError(`Server returned an empty response (${res.status})`);
+        if (res.status === 405) {
+          setError(`Server returned 405 Method Not Allowed. This usually means the API route is being blocked or misrouted. Please check server logs.`);
+        } else {
+          setError(`Server returned an empty response (${res.status})`);
+        }
         return;
       }
 
@@ -1949,8 +1958,7 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
       if (data.success) {
         const adminData = data.admin;
         login(data.token, { ...adminData, role: 'admin' });
-        // Wait for authUser to update before redirecting.
-        // Will be handled by AdminLoginPage useEffect.
+        navigate("/admin");
       } else {
         setError(data.error || "Invalid admin credentials");
       }
@@ -1971,8 +1979,8 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
           <div className="w-12 h-12 gold-gradient rounded-xl flex items-center justify-center mx-auto mb-4">
             <Lock className="text-primary" />
           </div>
-          <h2 className="text-2xl font-bold">Admin Portal v1.2</h2>
-          <p className="text-green-400 text-xs font-mono mt-1">SYSTEM UPDATED - PLEASE REFRESH</p>
+          <h2 className="text-2xl font-bold">Admin Portal v1.3</h2>
+          <p className="text-green-400 text-xs font-mono mt-1">DEBUG MODE ENABLED - CHECK CONSOLE</p>
           <p className="text-white/60 text-sm mt-2">Access Trustline CMS</p>
           {settings.sec_logo_url && (
             <div className="mt-6 flex flex-col items-center gap-2">
@@ -2078,7 +2086,15 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
   logout: () => void,
   key?: string
 }) {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  
+  useEffect(() => {
+    console.log("[AdminPanel] MOUNTED", { 
+      hasUser: !!user, 
+      hasToken: !!token, 
+      userEmail: user?.email 
+    });
+  }, [user, token]);
   const [tab, setTab] = useState("products");
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [messages, setMessages] = useState<any[]>([]);

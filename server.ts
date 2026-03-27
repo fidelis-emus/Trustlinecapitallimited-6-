@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,6 +16,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
+console.log("JWT_SECRET is set:", JWT_SECRET !== "trustline-secret-key-2026" ? "Custom" : "Default");
+console.log("JWT_SECRET prefix:", JWT_SECRET.substring(0, 3) + "...");
 
 const db = new Database("trustline.db");
 
@@ -201,21 +202,17 @@ if (newsCount.count === 0) {
 
 async function startServer() {
   const app = express();
-  app.use(cors());
-  app.options("*", cors());
   app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
 
-  // Debug: log API calls
+  // Global Request Logger
   app.use((req, res, next) => {
-    if (req.originalUrl.startsWith('/api')) {
-      console.log(`[API] ${req.method} ${req.originalUrl}`);
-    }
+    console.log(`[REQUEST] ${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log(`[HEADERS]`, JSON.stringify(req.headers));
     next();
   });
 
   // Health check
-  app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+  app.get("/api/health", (req, res) => res.json({ status: "ok", version: "1.3", mode: process.env.NODE_ENV || "development" }));
 
   const uploadsDir = path.join(__dirname, "public", "uploads");
   if (!fs.existsSync(uploadsDir)) {
@@ -237,10 +234,18 @@ async function startServer() {
   const authenticateToken = (req: any, res: any, next: any) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ success: false, error: "Unauthorized" });
+    console.log(`[AUTH] Verifying token for ${req.url}:`, token ? `${token.substring(0, 10)}...` : "MISSING");
+    
+    if (!token) {
+      console.log("Auth failed: No token provided");
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
 
     jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-      if (err) return res.status(403).json({ success: false, error: "Forbidden" });
+      if (err) {
+        console.log("Auth failed: Token verification error", err.message);
+        return res.status(403).json({ success: false, error: "Forbidden" });
+      }
       req.user = user;
       next();
     });
@@ -249,12 +254,10 @@ async function startServer() {
   // Middleware: Admin
   const authenticateAdmin = (req: any, res: any, next: any) => {
     authenticateToken(req, res, () => {
-      console.log("authenticateAdmin: user role", req.user?.role);
       if (req.user && req.user.role === 'admin') {
-        console.log("authenticateAdmin: admin access granted");
         next();
       } else {
-        console.log("authenticateAdmin: admin access denied");
+        console.log("Auth failed: User is not admin", req.user);
         res.status(403).json({ success: false, error: "Admin access required" });
       }
     });
@@ -296,26 +299,22 @@ async function startServer() {
     }
   });
 
-  // Admin: Login method fallback for non-POST
-  app.all("/api/admin/login", (req, res) => {
-    if (req.method !== "POST") {
-      return res.status(405).json({ success: false, error: "Method Not Allowed" });
-    }
-    res.setHeader('Allow', 'POST');
-    res.status(405).json({ success: false, error: "Method Not Allowed" });
-  });
-
   // Admin: Get Profile
   app.get("/api/admin/profile", authenticateAdmin, (req: any, res) => {
-    console.log("--- PROFILE ROUTE HIT ---");
-    console.log("User from token:", req.user);
-    const admin = db.prepare("SELECT id, email FROM admin WHERE id = ?").get(req.user.id) as any;
-    console.log("Admin from DB:", admin);
-    if (admin) {
-      res.json({ success: true, user: { ...admin, role: 'admin' } });
-    } else {
-      console.log("Admin not found for id:", req.user.id);
-      res.status(404).json({ success: false, error: "Admin not found" });
+    console.log("--- PROFILE ROUTE HIT ---", { userId: req.user.id, email: req.user.email });
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const admin = db.prepare("SELECT id, email FROM admin WHERE id = ?").get(req.user.id) as any;
+      if (admin) {
+        console.log("Admin profile found in DB:", admin.email);
+        res.json({ success: true, user: { ...admin, role: 'admin' } });
+      } else {
+        console.log("Admin profile NOT found in DB for ID:", req.user.id);
+        res.status(404).json({ success: false, error: "Admin not found" });
+      }
+    } catch (error) {
+      console.error("Profile fetch error:", error);
+      res.status(500).json({ success: false, error: "Failed to fetch profile" });
     }
   });
 
@@ -502,44 +501,6 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Admin: Add/Update Tailored Investment
-  app.post("/api/admin/tailored-investments", authenticateAdmin, (req, res) => {
-    const { id, title, description, image_url } = req.body;
-    if (id) {
-      db.prepare("UPDATE tailored_investments SET title = ?, description = ?, image_url = ? WHERE id = ?")
-        .run(title, description, image_url, id);
-    } else {
-      db.prepare("INSERT INTO tailored_investments (title, description, image_url) VALUES (?, ?, ?)")
-        .run(title, description, image_url);
-    }
-    res.json({ success: true });
-  });
-
-  // Admin: Delete Tailored Investment
-  app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, (req, res) => {
-    db.prepare("DELETE FROM tailored_investments WHERE id = ?").run(req.params.id);
-    res.json({ success: true });
-  });
-
-  // Admin: Add/Update Testimonial
-  app.post("/api/admin/testimonials", authenticateAdmin, (req, res) => {
-    const { id, name, role, content, image_url, rating } = req.body;
-    if (id) {
-      db.prepare("UPDATE testimonials SET name = ?, role = ?, content = ?, image_url = ?, rating = ? WHERE id = ?")
-        .run(name, role, content, image_url, rating, id);
-    } else {
-      db.prepare("INSERT INTO testimonials (name, role, content, image_url, rating) VALUES (?, ?, ?, ?, ?)")
-        .run(name, role, content, image_url, rating);
-    }
-    res.json({ success: true });
-  });
-
-  // Admin: Delete Testimonial
-  app.delete("/api/admin/testimonials/:id", authenticateAdmin, (req, res) => {
-    db.prepare("DELETE FROM testimonials WHERE id = ?").run(req.params.id);
-    res.json({ success: true });
-  });
-
   // Gallery: Get All
   app.get("/api/gallery", (req, res) => {
     const items = db.prepare("SELECT * FROM gallery ORDER BY created_at DESC").all();
@@ -632,14 +593,6 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Optional global API fallback (respects methods)
-  app.all("/api/*", (req, res) => {
-    if (!req.route) {
-      return res.status(404).json({ success: false, error: "API route not found", path: req.originalUrl, method: req.method });
-    }
-    res.status(405).json({ success: false, error: "Method Not Allowed" });
-  });
-
   // --- VITE MIDDLEWARE ---
   console.log("Environment mode:", process.env.NODE_ENV || "development");
   if (process.env.NODE_ENV !== "production") {
@@ -653,7 +606,7 @@ async function startServer() {
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
-  const PORT = Number(process.env.PORT) || 8080;
+  const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
 }
 
