@@ -92,6 +92,8 @@ const TAILORED_INVESTMENTS = [
   { id: "05", title: "Naira Investments", description: "Maximize local returns with high-yield NGN investment vehicles." }
 ];
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 export default function App() {
   const { user: authUser, logout: authLogout } = useAuth();
   const location = useLocation();
@@ -137,7 +139,7 @@ export default function App() {
 
   const fetchTestimonials = async () => {
     try {
-      const res = await fetch("/api/testimonials");
+      const res = await fetch(`${API_URL}/api/testimonials`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -153,7 +155,7 @@ export default function App() {
 
   const fetchTailoredInvestments = async () => {
     try {
-      const res = await fetch("/api/tailored-investments");
+      const res = await fetch(`${API_URL}/api/tailored-investments`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -169,7 +171,7 @@ export default function App() {
 
   const fetchStaffGallery = async () => {
     try {
-      const res = await fetch("/api/staff-gallery");
+      const res = await fetch(`${API_URL}/api/staff-gallery`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -185,7 +187,7 @@ export default function App() {
 
   const fetchGallery = async () => {
     try {
-      const res = await fetch("/api/gallery");
+      const res = await fetch(`${API_URL}/api/gallery`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -201,7 +203,7 @@ export default function App() {
 
   const fetchProducts = async () => {
     try {
-      const res = await fetch("/api/products");
+      const res = await fetch(`${API_URL}/api/products`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -217,7 +219,7 @@ export default function App() {
 
   const fetchNews = async () => {
     try {
-      const res = await fetch("/api/news");
+      const res = await fetch(`${API_URL}/api/news`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -233,7 +235,7 @@ export default function App() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch(`${API_URL}/api/settings`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -1458,7 +1460,7 @@ function TeamPage({ key }: { key?: string } = {}) {
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/team")
+    fetch(`${API_URL}/api/team`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const contentType = res.headers.get("content-type");
@@ -1743,7 +1745,7 @@ function ContactPage({ settings, key }: { settings: SiteSettings, key?: string }
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
 
     try {
-      const res = await fetch("/api/contact", {
+      const res = await fetch(`${API_URL}/api/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -1925,7 +1927,7 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
     
     try {
       console.log("Attempting login for:", email);
-      const res = await fetch("/api/admin/login", {
+      const res = await fetch(`${API_URL}/api/admin/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
@@ -2240,7 +2242,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const fetchTeam = async () => {
     try {
-      const res = await fetch("/api/team");
+      const res = await fetch(`${API_URL}/api/team`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -2256,7 +2258,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const fetchMessages = async () => {
     try {
-      const res = await fetch("/api/admin/contacts", {
+      const res = await fetch(`${API_URL}/api/admin/contacts`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -2274,7 +2276,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/products", {
+    const res = await fetch(`${API_URL}/api/admin/products`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2301,7 +2303,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/team", {
+    const res = await fetch(`${API_URL}/api/admin/team`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2324,7 +2326,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/news", {
+    const res = await fetch(`${API_URL}/api/admin/news`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2349,7 +2351,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddGalleryItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/gallery", {
+    const res = await fetch(`${API_URL}/api/admin/gallery`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2370,7 +2372,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddStaffGalleryItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/staff-gallery", {
+    const res = await fetch(`${API_URL}/api/admin/staff-gallery`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2391,7 +2393,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddTestimonial = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/testimonials", {
+    const res = await fetch(`${API_URL}/api/admin/testimonials`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2415,7 +2417,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleAddTailored = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/admin/tailored-investments", {
+    const res = await fetch(`${API_URL}/api/admin/tailored-investments`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -2437,7 +2439,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteProduct = async (id: number) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
-    await fetch(`/api/admin/products/${id}`, { 
+    await fetch(`${API_URL}/api/admin/products/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2446,7 +2448,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteMember = async (id: number) => {
     if (!confirm("Are you sure you want to delete this team member?")) return;
-    await fetch(`/api/admin/team/${id}`, { 
+    await fetch(`${API_URL}/api/admin/team/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2455,7 +2457,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteNews = async (id: number) => {
     if (!confirm("Are you sure you want to delete this news article?")) return;
-    await fetch(`/api/admin/news/${id}`, { 
+    await fetch(`${API_URL}/api/admin/news/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2464,7 +2466,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteGalleryItem = async (id: number) => {
     if (!confirm("Are you sure you want to delete this gallery image?")) return;
-    await fetch(`/api/admin/gallery/${id}`, { 
+    await fetch(`${API_URL}/api/admin/gallery/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2473,7 +2475,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteStaffGalleryItem = async (id: number) => {
     if (!confirm("Are you sure you want to delete this staff gallery image?")) return;
-    await fetch(`/api/admin/staff-gallery/${id}`, { 
+    await fetch(`${API_URL}/api/admin/staff-gallery/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2482,7 +2484,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteTestimonial = async (id: number) => {
     if (!confirm("Are you sure you want to delete this testimonial?")) return;
-    await fetch(`/api/admin/testimonials/${id}`, { 
+    await fetch(`${API_URL}/api/admin/testimonials/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2491,7 +2493,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleDeleteTailored = async (id: number) => {
     if (!confirm("Are you sure you want to delete this tailored investment?")) return;
-    await fetch(`/api/admin/tailored-investments/${id}`, { 
+    await fetch(`${API_URL}/api/admin/tailored-investments/${id}`, { 
       method: "DELETE",
       headers: { "Authorization": `Bearer ${token}` }
     });
@@ -2500,7 +2502,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
 
   const handleMarkMessageRead = async (id: number) => {
     try {
-      const res = await fetch(`/api/admin/contacts/${id}/read`, {
+      const res = await fetch(`${API_URL}/api/admin/contacts/${id}/read`, {
         method: "PATCH",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -2515,7 +2517,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
   const handleDeleteMessage = async (id: number) => {
     if (!confirm("Are you sure you want to delete this message?")) return;
     try {
-      const res = await fetch(`/api/admin/contacts/${id}`, {
+      const res = await fetch(`${API_URL}/api/admin/contacts/${id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -2612,7 +2614,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     formData.append("image", file);
 
     try {
-      const res = await fetch("/api/admin/upload", {
+      const res = await fetch(`${API_URL}/api/admin/upload`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body: formData
@@ -2650,7 +2652,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
   const handleSaveSettings = async () => {
     setUploading(true);
     try {
-      const res = await fetch("/api/admin/settings", {
+      const res = await fetch(`${API_URL}/api/admin/settings`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -2677,7 +2679,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     formData.append("image", file);
 
     try {
-      const res = await fetch("/api/admin/upload", {
+      const res = await fetch(`${API_URL}/api/admin/upload`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body: formData
@@ -2686,7 +2688,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
       if (data.success) {
         const newLogoUrl = data.imageUrl;
         // Update settings immediately
-        const settingsRes = await fetch("/api/admin/settings", {
+        const settingsRes = await fetch(`${API_URL}/api/admin/settings`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -2714,7 +2716,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     formData.append("image", file);
 
     try {
-      const res = await fetch("/api/admin/upload", {
+      const res = await fetch(`${API_URL}/api/admin/upload`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body: formData
@@ -2723,7 +2725,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
       if (data.success) {
         const newLogoUrl = data.imageUrl;
         // Update settings immediately
-        const settingsRes = await fetch("/api/admin/settings", {
+        const settingsRes = await fetch(`${API_URL}/api/admin/settings`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",

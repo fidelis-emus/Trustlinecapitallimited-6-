@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -33,7 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     try {
       console.log("[AuthContext] refreshUser - Fetching profile with token:", token.substring(0, 10) + "...");
-      const response = await fetch('/api/admin/profile', {
+      const response = await fetch(`${API_URL}/api/admin/profile`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
