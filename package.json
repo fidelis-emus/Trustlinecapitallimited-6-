@@ -1,11 +1,11 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "start": "tsx server.ts",
     "dev": "tsx server.ts",
+    "start": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -13,12 +13,12 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
-    "cors": "^2.8.5",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.4.1",
     "clsx": "^2.1.1",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
@@ -30,20 +30,18 @@
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.2",
     "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.14.0",
     "@types/nodemailer": "^7.0.11",
-    "autoprefixer": "^10.4.21",
-    "tailwindcss": "^4.1.14"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "autoprefixer": "^10.4.21"
   }
 }
