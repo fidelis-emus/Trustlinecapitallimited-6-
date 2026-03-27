@@ -8,23 +8,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  setDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  getDocFromServer
-} from "firebase/firestore";
+import admin from "firebase-admin";
 
 dotenv.config();
 
@@ -35,18 +19,25 @@ const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 
 // Load Firebase Config
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-applet-config.json"), "utf8"));
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+
+// Initialize Firebase Admin
+admin.initializeApp({
+  projectId: firebaseConfig.projectId,
+});
+
+const db = admin.firestore();
+if (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)') {
+  // Note: In some environments, you might need to specify the databaseId differently
+  // but for standard Firebase Admin, it usually uses the default or you'd use a different initialization
+}
 
 // Test Connection
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firestore connected successfully.");
+    await db.collection('test').doc('connection').get();
+    console.log("Firestore connected successfully via Admin SDK.");
   } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client is offline.");
-    }
+    console.error("Firestore connection error:", error);
   }
 }
 testConnection();
@@ -114,24 +105,22 @@ async function startServer() {
     try {
       // Check for default admin
       if (email.toLowerCase() === "fidelisemus@gmail.com" || email.toLowerCase() === "admin@trustline.com") {
-        // In a real app, we'd check the password against Firestore
-        // For now, we'll allow admin@trustline.com with admin123 or check Firestore
-        const adminQuery = query(collection(db, "admin"), where("email", "==", email.toLowerCase()));
-        const adminSnap = await getDocs(adminQuery);
+        const adminSnap = await db.collection("admin").where("email", "==", email.toLowerCase()).get();
         
-        let admin: any = null;
+        let adminData: any = null;
         if (!adminSnap.empty) {
-          admin = { id: adminSnap.docs[0].id, ...adminSnap.docs[0].data() };
+          adminData = { id: adminSnap.docs[0].id, ...adminSnap.docs[0].data() };
         } else if (email.toLowerCase() === "admin@trustline.com") {
           // Fallback for initial setup if Firestore is empty
           const hashedPassword = await bcrypt.hash("admin123", 10);
-          admin = { email: "admin@trustline.com", password: hashedPassword };
-          await addDoc(collection(db, "admin"), admin);
+          adminData = { email: "admin@trustline.com", password: hashedPassword };
+          const docRef = await db.collection("admin").add(adminData);
+          adminData.id = docRef.id;
         }
 
-        if (admin && (await bcrypt.compare(password, admin.password) || (email.toLowerCase() === "fidelisemus@gmail.com" && password === "admin123"))) {
-          const token = jwt.sign({ id: admin.id || 'default', email: admin.email, role: 'admin' }, JWT_SECRET);
-          return res.json({ success: true, token, admin: { email: admin.email, role: 'admin' } });
+        if (adminData && (await bcrypt.compare(password, adminData.password) || (email.toLowerCase() === "fidelisemus@gmail.com" && password === "admin123"))) {
+          const token = jwt.sign({ id: adminData.id || 'default', email: adminData.email, role: 'admin' }, JWT_SECRET);
+          return res.json({ success: true, token, admin: { email: adminData.email, role: 'admin' } });
         }
       }
       res.status(401).json({ success: false, error: "Invalid credentials" });
@@ -144,7 +133,7 @@ async function startServer() {
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "settings"));
+      const snap = await db.collection("settings").get();
       const settings: any = {};
       snap.forEach(doc => {
         const data = doc.data();
@@ -165,13 +154,12 @@ async function startServer() {
     const settings = req.body;
     try {
       for (const [key, value] of Object.entries(settings)) {
-        const q = query(collection(db, "settings"), where("key", "==", key));
-        const snap = await getDocs(q);
+        const snap = await db.collection("settings").where("key", "==", key).get();
         const val = key === 'core_values' ? JSON.stringify(value) : String(value);
         if (!snap.empty) {
-          await updateDoc(doc(db, "settings", snap.docs[0].id), { value: val });
+          await db.collection("settings").doc(snap.docs[0].id).update({ value: val });
         } else {
-          await addDoc(collection(db, "settings"), { key, value: val });
+          await db.collection("settings").add({ key, value: val });
         }
       }
       res.json({ success: true });
@@ -183,7 +171,7 @@ async function startServer() {
   // Products: Get All
   app.get("/api/products", async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "products"), orderBy("title", "asc")));
+      const snap = await db.collection("products").orderBy("title", "asc").get();
       const products = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(products);
     } catch (error) {
@@ -196,9 +184,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "products", id), data);
+        await db.collection("products").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "products"), data);
+        await db.collection("products").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -209,7 +197,7 @@ async function startServer() {
   // Admin: Delete Product
   app.delete("/api/admin/products/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "products", req.params.id));
+      await db.collection("products").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete product" });
@@ -219,7 +207,7 @@ async function startServer() {
   // News: Get All
   app.get("/api/news", async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "news"), orderBy("published_date", "desc")));
+      const snap = await db.collection("news").orderBy("published_date", "desc").get();
       const news = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(news);
     } catch (error) {
@@ -232,9 +220,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "news", id), data);
+        await db.collection("news").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "news"), data);
+        await db.collection("news").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -245,7 +233,7 @@ async function startServer() {
   // Admin: Delete News
   app.delete("/api/admin/news/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "news", req.params.id));
+      await db.collection("news").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete news" });
@@ -255,7 +243,7 @@ async function startServer() {
   // Team: Get All
   app.get("/api/team", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "team"));
+      const snap = await db.collection("team").get();
       const team = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(team);
     } catch (error) {
@@ -268,9 +256,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "team", id), data);
+        await db.collection("team").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "team"), data);
+        await db.collection("team").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -281,7 +269,7 @@ async function startServer() {
   // Admin: Delete Team Member
   app.delete("/api/admin/team/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "team", req.params.id));
+      await db.collection("team").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete team member" });
@@ -291,7 +279,7 @@ async function startServer() {
   // Gallery: Get All
   app.get("/api/gallery", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "gallery"));
+      const snap = await db.collection("gallery").get();
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -304,9 +292,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "gallery", id), data);
+        await db.collection("gallery").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "gallery"), data);
+        await db.collection("gallery").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -317,7 +305,7 @@ async function startServer() {
   // Admin: Delete Gallery Item
   app.delete("/api/admin/gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "gallery", req.params.id));
+      await db.collection("gallery").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete gallery item" });
@@ -327,7 +315,7 @@ async function startServer() {
   // Staff Gallery: Get All
   app.get("/api/staff-gallery", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "staff_gallery"));
+      const snap = await db.collection("staff_gallery").get();
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -340,9 +328,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "staff_gallery", id), data);
+        await db.collection("staff_gallery").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "staff_gallery"), data);
+        await db.collection("staff_gallery").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -353,7 +341,7 @@ async function startServer() {
   // Admin: Delete Staff Gallery Item
   app.delete("/api/admin/staff-gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "staff_gallery", req.params.id));
+      await db.collection("staff_gallery").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete staff gallery item" });
@@ -363,7 +351,7 @@ async function startServer() {
   // Testimonials: Get All
   app.get("/api/testimonials", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "testimonials"));
+      const snap = await db.collection("testimonials").get();
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -376,9 +364,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "testimonials", id), data);
+        await db.collection("testimonials").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "testimonials"), data);
+        await db.collection("testimonials").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -389,7 +377,7 @@ async function startServer() {
   // Admin: Delete Testimonial
   app.delete("/api/admin/testimonials/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "testimonials", req.params.id));
+      await db.collection("testimonials").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete testimonial" });
@@ -399,7 +387,7 @@ async function startServer() {
   // Tailored Investments: Get All
   app.get("/api/tailored-investments", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "tailored_investments"));
+      const snap = await db.collection("tailored_investments").get();
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -412,9 +400,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "tailored_investments", id), data);
+        await db.collection("tailored_investments").doc(id).update(data);
       } else {
-        await addDoc(collection(db, "tailored_investments"), data);
+        await db.collection("tailored_investments").add(data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -425,7 +413,7 @@ async function startServer() {
   // Admin: Delete Tailored Investment
   app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "tailored_investments", req.params.id));
+      await db.collection("tailored_investments").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete tailored investment" });
@@ -435,7 +423,7 @@ async function startServer() {
   // Admin: Get All Contacts/Messages
   app.get("/api/admin/contacts", authenticateAdmin, async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "contacts"), orderBy("created_at", "desc")));
+      const snap = await db.collection("contacts").orderBy("created_at", "desc").get();
       const contacts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(contacts);
     } catch (error) {
@@ -446,7 +434,7 @@ async function startServer() {
   // Admin: Mark Contact as Read
   app.patch("/api/admin/contacts/:id/read", authenticateAdmin, async (req, res) => {
     try {
-      await updateDoc(doc(db, "contacts", req.params.id), { is_read: true });
+      await db.collection("contacts").doc(req.params.id).update({ is_read: true });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to mark message as read" });
@@ -456,7 +444,7 @@ async function startServer() {
   // Admin: Delete Contact
   app.delete("/api/admin/contacts/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "contacts", req.params.id));
+      await db.collection("contacts").doc(req.params.id).delete();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete contact" });
@@ -467,7 +455,7 @@ async function startServer() {
   app.post("/api/contacts", async (req, res) => {
     const data = { ...req.body, is_read: false, created_at: new Date().toISOString() };
     try {
-      await addDoc(collection(db, "contacts"), data);
+      await db.collection("contacts").add(data);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to submit message" });
