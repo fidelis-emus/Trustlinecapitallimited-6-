@@ -130,6 +130,27 @@ async function startServer() {
     }
   });
 
+  // Admin: Get Profile
+  app.get("/api/admin/profile", authenticateToken, async (req, res) => {
+    try {
+      const adminSnap = await db.collection("admin").doc(req.user.id).get();
+      const adminData = adminSnap.data();
+      
+      res.json({
+        success: true,
+        user: {
+          id: req.user.id,
+          email: req.user.email,
+          role: req.user.role,
+          ...adminData
+        }
+      });
+    } catch (error) {
+      console.error("Profile fetch error:", error);
+      res.status(500).json({ success: false, error: "Failed to fetch profile" });
+    }
+  });
+
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
@@ -469,6 +490,11 @@ async function startServer() {
     res.json({ success: true, imageUrl });
   });
 
+  // 404 Handler for API routes (must come before SPA fallback)
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ success: false, error: "API endpoint not found" });
+  });
+
   // --- VITE MIDDLEWARE ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
@@ -476,7 +502,14 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+    // SPA fallback: Serve index.html only for non-API routes
+    app.get("*", (req, res) => {
+      if (!req.path.startsWith("/api")) {
+        res.sendFile(path.join(distPath, "index.html"));
+      } else {
+        res.status(404).json({ success: false, error: "API endpoint not found" });
+      }
+    });
   }
 
   const PORT = Number(process.env.PORT) || 3000;
