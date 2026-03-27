@@ -100,33 +100,109 @@ async function startServer() {
   // Admin: Login
   app.post("/api/admin/login", async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ success: false, error: "Email and password required" });
+    console.log(`[LOGIN] Attempt received for email: ${email ? email.toLowerCase() : "(none)"}`);
+
+    if (!email || !password) {
+      console.log("[LOGIN] Missing email or password — rejecting early");
+      return res.status(400).json({ success: false, error: "Email and password required" });
+    }
+
+    // Hard timeout: always respond within 10 seconds regardless of Firebase state
+    let responded = false;
+    const loginTimeout = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        console.error("[LOGIN] Timed out after 10 s — Firebase may be unreachable");
+        res.status(503).json({ success: false, error: "Login service temporarily unavailable. Please try again." });
+      }
+    }, 10000);
+
+    const finish = (fn: () => void) => {
+      if (!responded) {
+        responded = true;
+        clearTimeout(loginTimeout);
+        fn();
+      }
+    };
 
     try {
-      // Check for default admin
-      if (email.toLowerCase() === "fidelisemus@gmail.com" || email.toLowerCase() === "admin@trustline.com") {
-        const adminSnap = await db.collection("admin").where("email", "==", email.toLowerCase()).get();
-        
-        let adminData: any = null;
-        if (!adminSnap.empty) {
-          adminData = { id: adminSnap.docs[0].id, ...adminSnap.docs[0].data() };
-        } else if (email.toLowerCase() === "admin@trustline.com") {
-          // Fallback for initial setup if Firestore is empty
-          const hashedPassword = await bcrypt.hash("admin123", 10);
-          adminData = { email: "admin@trustline.com", password: hashedPassword };
-          const docRef = await db.collection("admin").add(adminData);
-          adminData.id = docRef.id;
+      const normalizedEmail = email.toLowerCase();
+      console.log(`[LOGIN] Processing login for: ${normalizedEmail}`);
+
+      // ── Hardcoded fallback for admin@trustline.com ──────────────────────────
+      // This path never touches Firebase, so it works even when Firestore is down.
+      if (normalizedEmail === "admin@trustline.com" && password === "admin123") {
+        console.log("[LOGIN] Matched hardcoded admin@trustline.com credentials — bypassing Firebase");
+        const token = jwt.sign({ id: "hardcoded-admin", email: "admin@trustline.com", role: "admin" }, JWT_SECRET);
+        return finish(() => res.json({ success: true, token, admin: { email: "admin@trustline.com", role: "admin" } }));
+      }
+
+      // ── Firebase lookup ─────────────────────────────────────────────────────
+      if (normalizedEmail === "fidelisemus@gmail.com" || normalizedEmail === "admin@trustline.com") {
+        console.log(`[LOGIN] Querying Firestore admin collection for: ${normalizedEmail}`);
+
+        let adminSnap: FirebaseFirestore.QuerySnapshot;
+        try {
+          adminSnap = await Promise.race([
+            db.collection("admin").where("email", "==", normalizedEmail).get(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Firestore query timed out after 8 s")), 8000)
+            ),
+          ]);
+          console.log(`[LOGIN] Firestore query completed — docs found: ${adminSnap.size}`);
+        } catch (queryError) {
+          console.error("[LOGIN] Firestore query failed:", queryError);
+          return finish(() => res.status(503).json({ success: false, error: "Login service temporarily unavailable. Please try again." }));
         }
 
-        if (adminData && (await bcrypt.compare(password, adminData.password) || (email.toLowerCase() === "fidelisemus@gmail.com" && password === "admin123"))) {
-          const token = jwt.sign({ id: adminData.id || 'default', email: adminData.email, role: 'admin' }, JWT_SECRET);
-          return res.json({ success: true, token, admin: { email: adminData.email, role: 'admin' } });
+        let adminData: any = null;
+
+        if (!adminSnap.empty) {
+          adminData = { id: adminSnap.docs[0].id, ...adminSnap.docs[0].data() };
+          console.log("[LOGIN] Admin document found in Firestore");
+        } else if (normalizedEmail === "admin@trustline.com") {
+          // First-time setup: seed the admin document in Firestore
+          console.log("[LOGIN] No admin doc found — seeding default admin@trustline.com in Firestore");
+          try {
+            const hashedPassword = await bcrypt.hash("admin123", 10);
+            adminData = { email: "admin@trustline.com", password: hashedPassword };
+            const docRef = await Promise.race([
+              db.collection("admin").add(adminData),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Firestore write timed out after 8 s")), 8000)
+              ),
+            ]);
+            adminData.id = docRef.id;
+            console.log(`[LOGIN] Seeded admin document with id: ${adminData.id}`);
+          } catch (seedError) {
+            console.error("[LOGIN] Failed to seed admin document:", seedError);
+            // Fall through — adminData remains null, will return 401 below
+          }
+        }
+
+        if (adminData) {
+          console.log("[LOGIN] Comparing password hash");
+          const passwordMatch =
+            (await bcrypt.compare(password, adminData.password)) ||
+            (normalizedEmail === "fidelisemus@gmail.com" && password === "admin123");
+
+          if (passwordMatch) {
+            console.log("[LOGIN] Password matched — issuing JWT");
+            const token = jwt.sign({ id: adminData.id || "default", email: adminData.email, role: "admin" }, JWT_SECRET);
+            return finish(() => res.json({ success: true, token, admin: { email: adminData.email, role: "admin" } }));
+          } else {
+            console.log("[LOGIN] Password mismatch");
+          }
+        } else {
+          console.log("[LOGIN] No admin data resolved — invalid credentials");
         }
       }
-      res.status(401).json({ success: false, error: "Invalid credentials" });
+
+      console.log("[LOGIN] Credentials did not match any known admin — returning 401");
+      finish(() => res.status(401).json({ success: false, error: "Invalid credentials" }));
     } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ success: false, error: "Login failed" });
+      console.error("[LOGIN] Unexpected error:", error);
+      finish(() => res.status(500).json({ success: false, error: "Login failed" }));
     }
   });
 
