@@ -1,5 +1,5 @@
 export interface User {
-  id: number;
+  id: string;
   name?: string;
   email: string;
   phone?: string;
@@ -11,7 +11,7 @@ export interface User {
 }
 
 export interface Product {
-  id: number;
+  id: string; // Changed to string for Firestore
   title: string;
   description: string;
   min_investment: number;
@@ -23,12 +23,15 @@ export interface Product {
   currency: string;
   rating: number;
   view_rate: number;
+  rate_3m?: number;
+  rate_6m?: number;
+  rate_12m?: number;
 }
 
 export interface Investment {
-  id: number;
-  user_id: number;
-  product_id: number;
+  id: string;
+  user_id: string;
+  product_id: string;
   amount: number;
   expected_return: number;
   start_date: string;
@@ -39,8 +42,8 @@ export interface Investment {
 }
 
 export interface Transaction {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   type: 'deposit' | 'withdrawal' | 'investment' | 'earning';
   amount: number;
   status: 'pending' | 'completed' | 'failed';
@@ -49,8 +52,8 @@ export interface Transaction {
 }
 
 export interface Notification {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   title: string;
   message: string;
   is_read: boolean;
@@ -75,13 +78,13 @@ export interface SiteSettings {
 }
 
 export interface GalleryItem {
-  id: number;
+  id: string;
   image_url: string;
   caption: string;
 }
 
 export interface Testimonial {
-  id: number;
+  id: string;
   name: string;
   role: string;
   content: string;
@@ -90,14 +93,14 @@ export interface Testimonial {
 }
 
 export interface TailoredInvestment {
-  id: number;
+  id: string;
   title: string;
   description: string;
   image_url: string;
 }
 
 export interface TeamMember {
-  id: number;
+  id: string;
   name: string;
   role: string;
   image_url: string;
@@ -105,7 +108,7 @@ export interface TeamMember {
 }
 
 export interface NewsItem {
-  id: number;
+  id: string;
   title: string;
   description: string;
   content: string;
