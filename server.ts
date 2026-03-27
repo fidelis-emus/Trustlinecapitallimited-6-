@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 
-// Load Firebase Config
+// Load Firebase Configuration
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-applet-config.json"), "utf8"));
 
 // Initialize Firebase Admin
