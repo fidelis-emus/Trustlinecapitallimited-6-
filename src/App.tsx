@@ -440,7 +440,7 @@ export default function App() {
 
 function WhatsAppChat() {
   const [isOpen, setIsOpen] = useState(false);
-  const whatsappNumber = "2347067829425";
+  const whatsappNumber = "+234 810 631 8408";
   const message = "Hello, I would like to speak with a CRM officer.";
 
   const handleChat = () => {
@@ -1139,13 +1139,6 @@ function HighlightCard({ icon, title, description }: { icon: React.ReactNode, ti
 
 function ProductCard({ product, setPage }: { product: Product, setPage: (p: string) => void, key?: any }) {
   const [showRate, setShowRate] = useState(false);
-  const [selectedDuration, setSelectedDuration] = useState<"3m" | "6m" | "12m">("12m");
-
-  const getRate = () => {
-    if (selectedDuration === "3m") return product.rate_3m || product.expected_return;
-    if (selectedDuration === "6m") return product.rate_6m || product.expected_return;
-    return product.rate_12m || product.expected_return;
-  };
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-slate-100 card-hover flex flex-col h-full group">
@@ -1161,8 +1154,8 @@ function ProductCard({ product, setPage }: { product: Product, setPage: (p: stri
               exit={{ opacity: 0, scale: 0.9 }}
               className="absolute inset-0 bg-primary/95 backdrop-blur-sm flex flex-col items-center justify-center text-white z-20 p-4 text-center"
             >
-              <div className="text-accent text-[10px] uppercase font-bold tracking-widest mb-2">Expected Annual Return ({selectedDuration})</div>
-              <div className="text-5xl font-black mb-6">{getRate()}%</div>
+              <div className="text-accent text-[10px] uppercase font-bold tracking-widest mb-2">Expected Annual Return</div>
+              <div className="text-5xl font-black mb-6">{product.expected_return}%</div>
               <button 
                 onClick={(e) => { e.stopPropagation(); setShowRate(false); }}
                 className="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-xl text-xs font-bold transition-all border border-white/20"
@@ -1199,35 +1192,19 @@ function ProductCard({ product, setPage }: { product: Product, setPage: (p: stri
             <span className="text-slate-500">Min. Investment</span>
             <span className="font-bold">{product.currency || '₦'}{product.min_investment.toLocaleString()}</span>
           </div>
-          <div className="flex justify-between text-sm items-center">
+          <div className="flex justify-between text-sm">
             <span className="text-slate-500">Duration</span>
-            <select 
-              value={selectedDuration}
-              onChange={(e) => setSelectedDuration(e.target.value as any)}
-              className="font-bold bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent"
-            >
-              <option value="3m">3 Months</option>
-              <option value="6m">6 Months</option>
-              <option value="12m">12 Months</option>
-            </select>
+            <span className="font-bold">{product.duration_months} Months</span>
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-3 mt-8">
+        <div className="grid grid-cols-1 gap-3 mt-8">
           <button 
             onClick={() => setShowRate(true)}
             className="py-3 rounded-xl border-2 border-accent text-primary font-bold hover:bg-accent transition-all text-sm"
           >
             View Rate
           </button>
-          <a 
-            href="https://app.trustlinecapitallimited.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="py-3 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all text-sm text-center flex items-center justify-center"
-          >
-            Invest Now
-          </a>
         </div>
       </div>
     </div>
@@ -1605,7 +1582,7 @@ function TeamCard({ member }: { member: TeamMember, key?: any }) {
 
 function CalculatorPage({ products, key }: { products: Product[], key?: string }) {
   const [amount, setAmount] = useState<number>(1000);
-  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || "");
+  const [selectedProductId, setSelectedProductId] = useState<number>(products[0]?.id || 0);
   const [duration, setDuration] = useState<number>(12);
   const [result, setResult] = useState<{ 
     total: number, 
@@ -1638,7 +1615,7 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
     }
   }, [products]);
 
-  const handleProductChange = (productId: string) => {
+  const handleProductChange = (productId: number) => {
     setSelectedProductId(productId);
     const product = products.find(p => p.id === productId);
     if (product) {
@@ -1674,7 +1651,7 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
                 <label className="block text-sm font-medium text-white/60 mb-2">Select Product</label>
                 <select 
                   value={selectedProductId}
-                  onChange={(e) => handleProductChange(e.target.value)}
+                  onChange={(e) => handleProductChange(Number(e.target.value))}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-accent"
                 >
                   {products.map(p => (
@@ -2166,10 +2143,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     duration_months: 12,
     image_url: "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&q=80&w=800",
     currency: "₦",
-    rating: 5,
-    rate_3m: 0,
-    rate_6m: 0,
-    rate_12m: 0
+    rating: 5
   });
 
   const [newMember, setNewMember] = useState({
@@ -2232,10 +2206,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
         duration_months: editingProduct.duration_months,
         image_url: editingProduct.image_url,
         currency: editingProduct.currency || "₦",
-        rating: editingProduct.rating || 5,
-        rate_3m: editingProduct.rate_3m || 0,
-        rate_6m: editingProduct.rate_6m || 0,
-        rate_12m: editingProduct.rate_12m || 0
+        rating: editingProduct.rating || 5
       });
       setShowAddModal(true);
     }
@@ -2322,10 +2293,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
         duration_months: 12,
         image_url: "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&q=80&w=800",
         currency: "₦",
-        rating: 5,
-        rate_3m: 0,
-        rate_6m: 0,
-        rate_12m: 0
+        rating: 5
       });
       fetchProducts();
     }
@@ -2467,7 +2435,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
+  const handleDeleteProduct = async (id: number) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
     await fetch(`/api/admin/products/${id}`, { 
       method: "DELETE",
@@ -2476,7 +2444,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchProducts();
   };
 
-  const handleDeleteMember = async (id: string) => {
+  const handleDeleteMember = async (id: number) => {
     if (!confirm("Are you sure you want to delete this team member?")) return;
     await fetch(`/api/admin/team/${id}`, { 
       method: "DELETE",
@@ -2485,7 +2453,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchTeam();
   };
 
-  const handleDeleteNews = async (id: string) => {
+  const handleDeleteNews = async (id: number) => {
     if (!confirm("Are you sure you want to delete this news article?")) return;
     await fetch(`/api/admin/news/${id}`, { 
       method: "DELETE",
@@ -2494,7 +2462,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchNews();
   };
 
-  const handleDeleteGalleryItem = async (id: string) => {
+  const handleDeleteGalleryItem = async (id: number) => {
     if (!confirm("Are you sure you want to delete this gallery image?")) return;
     await fetch(`/api/admin/gallery/${id}`, { 
       method: "DELETE",
@@ -2503,7 +2471,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchGallery();
   };
 
-  const handleDeleteStaffGalleryItem = async (id: string) => {
+  const handleDeleteStaffGalleryItem = async (id: number) => {
     if (!confirm("Are you sure you want to delete this staff gallery image?")) return;
     await fetch(`/api/admin/staff-gallery/${id}`, { 
       method: "DELETE",
@@ -2512,7 +2480,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchStaffGallery();
   };
 
-  const handleDeleteTestimonial = async (id: string) => {
+  const handleDeleteTestimonial = async (id: number) => {
     if (!confirm("Are you sure you want to delete this testimonial?")) return;
     await fetch(`/api/admin/testimonials/${id}`, { 
       method: "DELETE",
@@ -2521,7 +2489,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchTestimonials();
   };
 
-  const handleDeleteTailored = async (id: string) => {
+  const handleDeleteTailored = async (id: number) => {
     if (!confirm("Are you sure you want to delete this tailored investment?")) return;
     await fetch(`/api/admin/tailored-investments/${id}`, { 
       method: "DELETE",
@@ -2530,7 +2498,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     fetchTailoredInvestments();
   };
 
-  const handleMarkMessageRead = async (id: string) => {
+  const handleMarkMessageRead = async (id: number) => {
     try {
       const res = await fetch(`/api/admin/contacts/${id}/read`, {
         method: "PATCH",
@@ -2544,7 +2512,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     }
   };
 
-  const handleDeleteMessage = async (id: string) => {
+  const handleDeleteMessage = async (id: number) => {
     if (!confirm("Are you sure you want to delete this message?")) return;
     try {
       const res = await fetch(`/api/admin/contacts/${id}`, {
@@ -3718,35 +3686,6 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
                   onChange={(e) => setNewProduct({ ...newProduct, duration_months: Number(e.target.value) })}
                   className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent" 
                 />
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Rate (3m) %</label>
-                  <input 
-                    type="number" step="0.1"
-                    value={newProduct.rate_3m}
-                    onChange={(e) => setNewProduct({ ...newProduct, rate_3m: Number(e.target.value) })}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Rate (6m) %</label>
-                  <input 
-                    type="number" step="0.1"
-                    value={newProduct.rate_6m}
-                    onChange={(e) => setNewProduct({ ...newProduct, rate_6m: Number(e.target.value) })}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Rate (12m) %</label>
-                  <input 
-                    type="number" step="0.1"
-                    value={newProduct.rate_12m}
-                    onChange={(e) => setNewProduct({ ...newProduct, rate_12m: Number(e.target.value) })}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent" 
-                  />
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Image</label>
