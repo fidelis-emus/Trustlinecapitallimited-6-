@@ -440,7 +440,7 @@ export default function App() {
 
 function WhatsAppChat() {
   const [isOpen, setIsOpen] = useState(false);
-  const whatsappNumber = "+234 810 631 8408";
+  const whatsappNumber = "+2348106318408";
   const message = "Hello, I would like to speak with a CRM officer.";
 
   const handleChat = () => {
