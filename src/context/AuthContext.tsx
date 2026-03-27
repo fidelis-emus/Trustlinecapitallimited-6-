@@ -1,12 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 
-const API = import.meta.env.VITE_API_URL;
-
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (token: string, user: User) => void;
   logout: () => void;
   isLoading: boolean;
   refreshUser: () => Promise<void>;
@@ -29,63 +27,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     if (!token) {
+      console.log("[AuthContext] refreshUser - No token, skipping refresh");
       setIsLoading(false);
       return;
     }
-
     try {
-      const response = await fetch(`${API}/api/admin/profile`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+      console.log("[AuthContext] refreshUser - Fetching profile with token:", token.substring(0, 10) + "...");
+      const response = await fetch('/api/admin/profile', {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
       });
+      
+      console.log("[AuthContext] refreshUser - Response status:", response.status);
+      
+      if (response.status === 405) {
+        console.error("[AuthContext] refreshUser - RECEIVED 405 METHOD NOT ALLOWED. This is unexpected for a GET request.");
+      }
 
+      const text = await response.text();
+      console.log("[AuthContext] refreshUser - Response body (first 100 chars):", text.substring(0, 100));
+      
       if (!response.ok) {
+        console.warn("[AuthContext] refreshUser - Response not OK, logging out. Status:", response.status);
         logout();
         return;
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("[AuthContext] refreshUser - Failed to parse JSON:", e);
+        logout();
+        return;
+      }
 
       if (data.success) {
+        console.log("[AuthContext] refreshUser - Success for:", data.user.email);
         setUser(data.user);
       } else {
+        console.warn("[AuthContext] refreshUser - API returned success:false:", data.error);
         logout();
       }
     } catch (error) {
-      console.error("refreshUser error:", error);
+      console.error('[AuthContext] refreshUser - Network or other error:', error);
+      // Don't logout on network error, maybe it's temporary
     } finally {
       setIsLoading(false);
     }
   };
 
-  const login = async (email: string, password: string) => {
-    try {
-      const response = await fetch(`${API}/api/admin/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || "Login failed" };
-      }
-
-      localStorage.setItem("token", data.token);
-      setToken(data.token);
-      setUser(data.admin);
-
-      return { success: true };
-    } catch (error) {
-      console.error("login error:", error);
-      return { success: false, error: "Network error" };
-    }
+  const login = (newToken: string, newUser: User) => {
+    localStorage.setItem('token', newToken);
+    setToken(newToken);
+    setUser(newUser);
   };
 
   const logout = () => {
