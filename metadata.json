@@ -1,5 +1,5 @@
 {
-  "name": "Trustline Capital Limited",
-  "description": "A professional asset management platform featuring investment products, a returns calculator, and a secure investor portal.",
+  "name": "Trustline CMS Admin",
+  "description": "A secure CMS admin panel with JWT authentication and real-time profile management.",
   "requestFramePermissions": []
 }
