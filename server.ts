@@ -91,11 +91,20 @@ async function startServer() {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     
-    if (!token) return res.status(401).json({ success: false, error: "Unauthorized" });
+    console.log(`[AUTH] Checking token for ${req.method} ${req.url}`);
+    
+    if (!token) {
+      console.warn(`[AUTH] No token provided for ${req.url}`);
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
 
     jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-      if (err) return res.status(403).json({ success: false, error: "Forbidden" });
+      if (err) {
+        console.error(`[AUTH] Token verification failed for ${req.url}:`, err.message);
+        return res.status(403).json({ success: false, error: "Forbidden" });
+      }
       req.user = user;
+      console.log(`[AUTH] Token verified for user: ${user.email}`);
       next();
     });
   };
@@ -112,18 +121,26 @@ async function startServer() {
   };
 
   // Admin: Login
-  app.route("/api/admin/login")
-    .get((req, res) => {
-      console.log("[LOGIN] GET request received - returning error");
-      res.status(405).json({ success: false, error: "POST required" });
-    })
-    .post(async (req, res) => {
-      console.log(`[LOGIN] POST attempt for: ${req.body?.email}`);
-      const { email, password } = req.body || {};
-      if (!email || !password) {
-        console.log("[LOGIN] Missing credentials");
-        return res.status(400).json({ success: false, error: "Email and password required" });
-      }
+  app.all("/api/admin/login", async (req, res) => {
+    console.log(`[LOGIN] ${new Date().toISOString()} - Method: ${req.method}, URL: ${req.url}`);
+    
+    if (req.method !== "POST") {
+      console.warn(`[LOGIN] Method ${req.method} not allowed for login`);
+      return res.status(405).json({ 
+        success: false, 
+        error: "Method Not Allowed. Please use POST.",
+        receivedMethod: req.method
+      });
+    }
+
+    console.log(`[LOGIN] Headers: ${JSON.stringify(req.headers)}`);
+    console.log(`[LOGIN] Body keys: ${Object.keys(req.body || {})}`);
+    
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      console.log("[LOGIN] Missing credentials");
+      return res.status(400).json({ success: false, error: "Email and password required" });
+    }
 
     try {
       // Check for default admin
@@ -154,7 +171,11 @@ async function startServer() {
   });
 
   // Admin: Profile
-  app.get("/api/admin/profile", authenticateAdmin, async (req: any, res) => {
+  app.all("/api/admin/profile", authenticateAdmin, async (req: any, res) => {
+    console.log(`[PROFILE] ${new Date().toISOString()} - Method: ${req.method}, URL: ${req.url}`);
+    if (req.method !== "GET") {
+      return res.status(405).json({ success: false, error: "Method Not Allowed. Please use GET." });
+    }
     res.json({ success: true, user: req.user });
   });
 

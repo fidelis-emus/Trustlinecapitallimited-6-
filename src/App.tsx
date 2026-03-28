@@ -1963,15 +1963,19 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
     setError("");
     
     try {
-      console.log("Attempting login for:", email);
       const loginUrl = "/api/admin/login";
-      console.log(`[AdminLogin] Attempting POST to ${loginUrl} with email: ${email}`);
+      const fullUrl = window.location.origin + loginUrl;
+      console.log(`[AdminLogin] Attempting POST to ${fullUrl} with email: ${email}`);
       const res = await fetch(loginUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         body: JSON.stringify({ email, password })
       });
-      console.log(`[AdminLogin] Response status: ${res.status}, content-type: ${res.headers.get("content-type")}`);
+      console.log(`[AdminLogin] Response status: ${res.status}, ok: ${res.ok}, type: ${res.type}`);
+      console.log(`[AdminLogin] Response headers:`, Object.fromEntries(res.headers.entries()));
       
       const text = await res.text();
       console.log("Login response status:", res.status);
