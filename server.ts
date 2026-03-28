@@ -129,6 +129,11 @@ async function startServer() {
     }
   });
 
+  // Admin: Profile
+  app.get("/api/admin/profile", authenticateAdmin, async (req, res) => {
+    res.json({ success: true, user: req.user });
+  });
+
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
