@@ -65,7 +65,8 @@ db.exec(`
     content TEXT,
     author TEXT,
     image_url TEXT,
-    published_date TEXT,
+    date TEXT,
+    category TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -336,7 +337,7 @@ async function startServer() {
   // News: Get All
   app.get("/api/news", async (req, res) => {
     try {
-      const news = db.prepare("SELECT * FROM news ORDER BY published_date DESC").all();
+      const news = db.prepare("SELECT * FROM news ORDER BY date DESC").all();
       res.json(news);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch news" });
