@@ -1782,7 +1782,7 @@ function ContactPage({ settings, key }: { settings: SiteSettings, key?: string }
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
 
     try {
-      const res = await fetch("/api/contact", {
+      const res = await fetch("/api/contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -1964,11 +1964,14 @@ function AdminLoginPage({ settings, key }: { settings: SiteSettings, key?: strin
     
     try {
       console.log("Attempting login for:", email);
-      const res = await fetch("/api/admin/login", {
+      const loginUrl = "/api/admin/login";
+      console.log(`[AdminLogin] Attempting POST to ${loginUrl} with email: ${email}`);
+      const res = await fetch(loginUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
       });
+      console.log(`[AdminLogin] Response status: ${res.status}, content-type: ${res.headers.get("content-type")}`);
       
       const text = await res.text();
       console.log("Login response status:", res.status);

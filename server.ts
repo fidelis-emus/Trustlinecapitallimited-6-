@@ -24,9 +24,9 @@ const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-applet-config.json"), "utf8"));
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-const auth = getAuth(app);
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const auth = getAuth(firebaseApp);
 
 // Test Connection
 async function testConnection() {
@@ -46,9 +46,26 @@ async function startServer() {
 
   // Global Request Logger
   app.use((req, res, next) => {
-    console.log(`[REQUEST] ${new Date().toISOString()} - ${req.method} ${req.url}`);
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`[REQUEST] ${new Date().toISOString()} - ${req.method} ${req.url} - ${res.statusCode} (${duration}ms) - Content-Type: ${res.get('Content-Type')}`);
+    });
     next();
   });
+
+  // Trailing slash middleware for API
+  app.use((req, res, next) => {
+    if (req.url.startsWith("/api/") && req.url.endsWith("/") && req.url.length > 5) {
+      const oldUrl = req.url;
+      req.url = req.url.slice(0, -1);
+      console.log(`[REWRITE] Trailing slash removed: ${oldUrl} -> ${req.url}`);
+    }
+    next();
+  });
+
+  console.log(`[SERVER] Mode: ${process.env.NODE_ENV || "development"}`);
+  console.log(`[SERVER] Static path: ${path.join(process.cwd(), "dist")}`);
 
   // Health check
   app.get("/api/health", (req, res) => res.json({ status: "ok", mode: process.env.NODE_ENV || "development" }));
@@ -95,11 +112,18 @@ async function startServer() {
   };
 
   // Admin: Login
-  app.get("/api/admin/login", (req, res) => res.json({ success: false, error: "POST required" }));
-  app.post("/api/admin/login", async (req, res) => {
-    console.log(`[LOGIN] Attempt for: ${req.body.email}`);
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ success: false, error: "Email and password required" });
+  app.route("/api/admin/login")
+    .get((req, res) => {
+      console.log("[LOGIN] GET request received - returning error");
+      res.status(405).json({ success: false, error: "POST required" });
+    })
+    .post(async (req, res) => {
+      console.log(`[LOGIN] POST attempt for: ${req.body?.email}`);
+      const { email, password } = req.body || {};
+      if (!email || !password) {
+        console.log("[LOGIN] Missing credentials");
+        return res.status(400).json({ success: false, error: "Email and password required" });
+      }
 
     try {
       // Check for default admin
@@ -130,7 +154,7 @@ async function startServer() {
   });
 
   // Admin: Profile
-  app.get("/api/admin/profile", authenticateAdmin, async (req, res) => {
+  app.get("/api/admin/profile", authenticateAdmin, async (req: any, res) => {
     res.json({ success: true, user: req.user });
   });
 
@@ -474,18 +498,44 @@ async function startServer() {
     res.json({ success: true, imageUrl });
   });
 
+  // --- API CATCH-ALL ---
+  // This ensures that any request starting with /api/ that didn't match a route
+  // returns a 404 JSON instead of falling through to the SPA catch-all (HTML).
+  app.all("/api/*", (req, res) => {
+    console.log(`[API 404] ${req.method} ${req.url} - No route matched`);
+    res.status(404).json({ 
+      success: false, 
+      error: `API route not found: ${req.method} ${req.url}`,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // --- VITE MIDDLEWARE ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    console.log(`[SERVER] Serving static files from: ${distPath}`);
+    if (!fs.existsSync(distPath)) {
+      console.error(`[SERVER] ERROR: dist folder not found at ${distPath}`);
+    }
     app.use(express.static(distPath));
-    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+    app.get("*", (req, res) => {
+      console.log(`[SPA FALLBACK] ${req.method} ${req.url} - Serving index.html`);
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("index.html not found - build might have failed");
+      }
+    });
   }
 
-  const PORT = 3000;
-  app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
+  const PORT = process.env.PORT || 3000;
+  app.listen(Number(PORT), "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
 }
 
 startServer();
