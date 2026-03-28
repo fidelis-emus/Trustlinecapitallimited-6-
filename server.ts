@@ -8,9 +8,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import Database from "better-sqlite3";
 
 console.log("[SERVER] Script starting...");
 dotenv.config();
@@ -20,24 +18,117 @@ const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 
-// Load Firebase Config
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-applet-config.json"), "utf8"));
-
-// Initialize Firebase
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-const auth = getAuth(firebaseApp);
-
-// Test Connection
-async function testConnection() {
-  try {
-    await getDoc(doc(db, 'test', 'connection'));
-    console.log("Firestore connected successfully via Client SDK.");
-  } catch (error) {
-    console.error("Firestore connection error:", error);
-  }
+// Initialize SQLite Database
+const dbPath = path.join(__dirname, "database", "trustline.db");
+if (!fs.existsSync(path.join(__dirname, "database"))) {
+  fs.mkdirSync(path.join(__dirname, "database"));
 }
-testConnection();
+const db = new Database(dbPath);
+
+// Create tables if they don't exist
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    min_investment REAL,
+    expected_return REAL,
+    duration_months INTEGER,
+    risk_level TEXT,
+    category TEXT,
+    image_url TEXT,
+    currency TEXT,
+    rating REAL,
+    view_rate REAL,
+    rate_3m REAL,
+    rate_6m REAL,
+    rate_12m REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS news (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT,
+    author TEXT,
+    image_url TEXT,
+    published_date TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS team (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    image_url TEXT,
+    category TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS gallery (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_url TEXT NOT NULL,
+    caption TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS staff_gallery (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_url TEXT NOT NULL,
+    caption TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS testimonials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    image_url TEXT,
+    rating REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS tailored_investments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT,
+    email TEXT NOT NULL,
+    message TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// Seed default admin if not exists
+const adminCount = db.prepare("SELECT COUNT(*) as count FROM admin").get() as { count: number };
+if (adminCount.count === 0) {
+  const hashedPassword = bcrypt.hashSync("admin123", 10);
+  db.prepare("INSERT INTO admin (email, password) VALUES (?, ?)").run("admin@trustline.com", hashedPassword);
+  db.prepare("INSERT INTO admin (email, password) VALUES (?, ?)").run("fidelisemus@gmail.com", hashedPassword);
+  console.log("[SERVER] Default admins created: admin@trustline.com and fidelisemus@gmail.com / admin123");
+}
 
 async function startServer() {
   const app = express();
@@ -133,39 +224,22 @@ async function startServer() {
       });
     }
 
-    console.log(`[LOGIN] Headers: ${JSON.stringify(req.headers)}`);
-    console.log(`[LOGIN] Body keys: ${Object.keys(req.body || {})}`);
-    
     const { email, password } = req.body || {};
     if (!email || !password) {
-      console.log("[LOGIN] Missing credentials");
       return res.status(400).json({ success: false, error: "Email and password required" });
     }
 
     try {
-      // Check for default admin
-      if (email.toLowerCase() === "fidelisemus@gmail.com" || email.toLowerCase() === "admin@trustline.com") {
-        const adminSnap = await getDocs(query(collection(db, "admin"), where("email", "==", email.toLowerCase())));
-        
-        let adminData: any = null;
-        if (!adminSnap.empty) {
-          adminData = { id: adminSnap.docs[0].id, ...adminSnap.docs[0].data() };
-        } else if (email.toLowerCase() === "admin@trustline.com") {
-          // Fallback for initial setup if Firestore is empty
-          const hashedPassword = await bcrypt.hash("admin123", 10);
-          adminData = { email: "admin@trustline.com", password: hashedPassword };
-          const docRef = await addDoc(collection(db, "admin"), adminData);
-          adminData.id = docRef.id;
-        }
-
-        if (adminData && (await bcrypt.compare(password, adminData.password) || (email.toLowerCase() === "fidelisemus@gmail.com" && password === "admin123"))) {
-          const token = jwt.sign({ id: adminData.id || 'default', email: adminData.email, role: 'admin' }, JWT_SECRET);
-          return res.json({ success: true, token, admin: { email: adminData.email, role: 'admin' } });
-        }
+      const admin = db.prepare("SELECT * FROM admin WHERE email = ?").get(email.toLowerCase()) as any;
+      
+      if (admin && await bcrypt.compare(password, admin.password)) {
+        const token = jwt.sign({ id: admin.id, email: admin.email, role: 'admin' }, JWT_SECRET);
+        return res.json({ success: true, token, admin: { email: admin.email, role: 'admin' } });
       }
+
       res.status(401).json({ success: false, error: "Invalid credentials" });
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch (error: any) {
+      console.error("[LOGIN] Error:", error);
       res.status(500).json({ success: false, error: "Login failed" });
     }
   });
@@ -182,14 +256,13 @@ async function startServer() {
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "settings"));
+      const rows = db.prepare("SELECT * FROM settings").all() as any[];
       const settings: any = {};
-      snap.forEach(doc => {
-        const data = doc.data();
-        if (data.key === 'core_values') {
-          try { settings[data.key] = JSON.parse(data.value); } catch (e) { settings[data.key] = []; }
+      rows.forEach(row => {
+        if (row.key === 'core_values') {
+          try { settings[row.key] = JSON.parse(row.value); } catch (e) { settings[row.key] = []; }
         } else {
-          settings[data.key] = data.value;
+          settings[row.key] = row.value;
         }
       });
       res.json(settings);
@@ -203,17 +276,17 @@ async function startServer() {
   app.post("/api/admin/settings", authenticateAdmin, async (req, res) => {
     const settings = req.body;
     try {
-      for (const [key, value] of Object.entries(settings)) {
-        const snap = await getDocs(query(collection(db, "settings"), where("key", "==", key)));
-        const val = key === 'core_values' ? JSON.stringify(value) : String(value);
-        if (!snap.empty) {
-          await updateDoc(doc(db, "settings", snap.docs[0].id), { value: val });
-        } else {
-          await addDoc(collection(db, "settings"), { key, value: val });
+      const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+      const transaction = db.transaction((settingsObj) => {
+        for (const [key, value] of Object.entries(settingsObj)) {
+          const val = key === 'core_values' ? JSON.stringify(value) : String(value);
+          stmt.run(key, val);
         }
-      }
+      });
+      transaction(settings);
       res.json({ success: true });
     } catch (error) {
+      console.error("Error updating settings:", error);
       res.status(500).json({ success: false, error: "Failed to update settings" });
     }
   });
@@ -221,8 +294,7 @@ async function startServer() {
   // Products: Get All
   app.get("/api/products", async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "products"), orderBy("title", "asc")));
-      const products = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const products = db.prepare("SELECT * FROM products ORDER BY title ASC").all();
       res.json(products);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch products" });
@@ -234,12 +306,19 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "products", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE products SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "products"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO products (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
+      console.error("Error saving product:", error);
       res.status(500).json({ success: false, error: "Failed to save product" });
     }
   });
@@ -247,7 +326,7 @@ async function startServer() {
   // Admin: Delete Product
   app.delete("/api/admin/products/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "products", req.params.id));
+      db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete product" });
@@ -257,8 +336,7 @@ async function startServer() {
   // News: Get All
   app.get("/api/news", async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "news"), orderBy("published_date", "desc")));
-      const news = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const news = db.prepare("SELECT * FROM news ORDER BY published_date DESC").all();
       res.json(news);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch news" });
@@ -270,9 +348,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "news", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE news SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "news"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO news (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -283,7 +367,7 @@ async function startServer() {
   // Admin: Delete News
   app.delete("/api/admin/news/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "news", req.params.id));
+      db.prepare("DELETE FROM news WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete news" });
@@ -293,8 +377,7 @@ async function startServer() {
   // Team: Get All
   app.get("/api/team", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "team"));
-      const team = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const team = db.prepare("SELECT * FROM team").all();
       res.json(team);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch team" });
@@ -306,9 +389,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "team", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE team SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "team"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO team (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -319,7 +408,7 @@ async function startServer() {
   // Admin: Delete Team Member
   app.delete("/api/admin/team/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "team", req.params.id));
+      db.prepare("DELETE FROM team WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete team member" });
@@ -329,8 +418,7 @@ async function startServer() {
   // Gallery: Get All
   app.get("/api/gallery", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "gallery"));
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = db.prepare("SELECT * FROM gallery").all();
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch gallery" });
@@ -342,9 +430,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "gallery", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE gallery SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "gallery"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO gallery (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -355,7 +449,7 @@ async function startServer() {
   // Admin: Delete Gallery Item
   app.delete("/api/admin/gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "gallery", req.params.id));
+      db.prepare("DELETE FROM gallery WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete gallery item" });
@@ -365,8 +459,7 @@ async function startServer() {
   // Staff Gallery: Get All
   app.get("/api/staff-gallery", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "staff_gallery"));
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = db.prepare("SELECT * FROM staff_gallery").all();
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch staff gallery" });
@@ -378,9 +471,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "staff_gallery", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE staff_gallery SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "staff_gallery"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO staff_gallery (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -391,7 +490,7 @@ async function startServer() {
   // Admin: Delete Staff Gallery Item
   app.delete("/api/admin/staff-gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "staff_gallery", req.params.id));
+      db.prepare("DELETE FROM staff_gallery WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete staff gallery item" });
@@ -401,8 +500,7 @@ async function startServer() {
   // Testimonials: Get All
   app.get("/api/testimonials", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "testimonials"));
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = db.prepare("SELECT * FROM testimonials").all();
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch testimonials" });
@@ -414,9 +512,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "testimonials", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE testimonials SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "testimonials"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO testimonials (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -427,7 +531,7 @@ async function startServer() {
   // Admin: Delete Testimonial
   app.delete("/api/admin/testimonials/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "testimonials", req.params.id));
+      db.prepare("DELETE FROM testimonials WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete testimonial" });
@@ -437,8 +541,7 @@ async function startServer() {
   // Tailored Investments: Get All
   app.get("/api/tailored-investments", async (req, res) => {
     try {
-      const snap = await getDocs(collection(db, "tailored_investments"));
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = db.prepare("SELECT * FROM tailored_investments").all();
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch tailored investments" });
@@ -450,9 +553,15 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await updateDoc(doc(db, "tailored_investments", id), data);
+        const keys = Object.keys(data);
+        const setClause = keys.map(k => `${k} = ?`).join(", ");
+        const values = Object.values(data);
+        db.prepare(`UPDATE tailored_investments SET ${setClause} WHERE id = ?`).run(...values, id);
       } else {
-        await addDoc(collection(db, "tailored_investments"), data);
+        const keys = Object.keys(data);
+        const placeholders = keys.map(() => "?").join(", ");
+        const values = Object.values(data);
+        db.prepare(`INSERT INTO tailored_investments (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -463,7 +572,7 @@ async function startServer() {
   // Admin: Delete Tailored Investment
   app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "tailored_investments", req.params.id));
+      db.prepare("DELETE FROM tailored_investments WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete tailored investment" });
@@ -473,8 +582,7 @@ async function startServer() {
   // Admin: Get All Contacts/Messages
   app.get("/api/admin/contacts", authenticateAdmin, async (req, res) => {
     try {
-      const snap = await getDocs(query(collection(db, "contacts"), orderBy("created_at", "desc")));
-      const contacts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const contacts = db.prepare("SELECT * FROM contacts ORDER BY created_at DESC").all();
       res.json(contacts);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch contacts" });
@@ -484,7 +592,7 @@ async function startServer() {
   // Admin: Mark Contact as Read
   app.patch("/api/admin/contacts/:id/read", authenticateAdmin, async (req, res) => {
     try {
-      await updateDoc(doc(db, "contacts", req.params.id), { is_read: true });
+      db.prepare("UPDATE contacts SET is_read = 1 WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to mark message as read" });
@@ -494,7 +602,7 @@ async function startServer() {
   // Admin: Delete Contact
   app.delete("/api/admin/contacts/:id", authenticateAdmin, async (req, res) => {
     try {
-      await deleteDoc(doc(db, "contacts", req.params.id));
+      db.prepare("DELETE FROM contacts WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete contact" });
@@ -503,11 +611,16 @@ async function startServer() {
 
   // Contact: Submit
   app.post("/api/contacts", async (req, res) => {
-    const data = { ...req.body, is_read: false, created_at: new Date().toISOString() };
+    const data = req.body;
     try {
-      await addDoc(collection(db, "contacts"), data);
+      const keys = Object.keys(data);
+      const placeholders = keys.map(() => "?").join(", ");
+      const values = Object.values(data);
+      db.prepare(`INSERT INTO contacts (${keys.join(", ")}, is_read, created_at) VALUES (${placeholders}, 0, ?)`)
+        .run(...values, new Date().toISOString());
       res.json({ success: true });
     } catch (error) {
+      console.error("Error submitting contact:", error);
       res.status(500).json({ success: false, error: "Failed to submit message" });
     }
   });
