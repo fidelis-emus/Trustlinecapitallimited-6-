@@ -595,7 +595,7 @@ function NewsSection({ setPage, setSelectedNews, news: newsData }: { setPage: (p
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {newsData.slice(0, 4).map((news) => (
+          {(newsData.length > 0 ? newsData : NEWS_ITEMS).slice(0, 4).map((news) => (
             <motion.div 
               key={news.id}
               initial={{ opacity: 0, y: 20 }}
@@ -612,7 +612,7 @@ function NewsSection({ setPage, setSelectedNews, news: newsData }: { setPage: (p
                 />
                 <div className="absolute top-4 left-4">
                   <span className="bg-primary/80 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">
-                    Market News
+                    {news.category || "Market News"}
                   </span>
                 </div>
               </div>
@@ -737,7 +737,7 @@ function NewsPage({ setPage, setSelectedNews, news: newsData }: { setPage: (p: s
                   </div>
                   <div className="md:w-3/5 p-8 md:p-10 flex flex-col">
                     <div className="flex items-center gap-4 mb-4">
-                      <span className="text-[10px] font-bold text-accent uppercase tracking-widest">Market Update</span>
+                      <span className="text-[10px] font-bold text-accent uppercase tracking-widest">{news.category || "Market Update"}</span>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{news.date}</span>
                     </div>
                     <h2 className="text-2xl font-bold mb-4 text-primary group-hover:text-accent transition-colors">{news.title}</h2>
@@ -851,7 +851,7 @@ function NewsDetailPage({ news, setPage }: { news: NewsItem | null, setPage: (p:
         <div className="mb-12">
           <div className="flex items-center gap-4 mb-6">
             <span className="bg-accent/20 text-accent text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">
-              Market Update
+              {news.category || "Market Update"}
             </span>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               {news.date}
@@ -2201,6 +2201,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
     description: "",
     content: "",
     author: "",
+    category: "Market Update",
     image_url: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=800",
     date: new Date().toISOString().split('T')[0]
   });
@@ -2389,6 +2390,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
         description: "",
         content: "",
         author: "",
+        category: "Market Update",
         image_url: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=800",
         date: new Date().toISOString().split('T')[0]
       });
@@ -3575,7 +3577,7 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
                 <button onClick={() => { setShowNewsModal(false); setEditingNews(null); }}><X /></button>
               </div>
               <form className="p-8 space-y-4 max-h-[80vh] overflow-y-auto" onSubmit={handleAddNews}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
                     <input 
@@ -3593,6 +3595,21 @@ function AdminPanel({ products, fetchProducts, siteSettings, fetchSettings, news
                       onChange={(e) => setNewNews({ ...newNews, author: e.target.value })}
                       className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent" 
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select 
+                      required
+                      value={newNews.category}
+                      onChange={(e) => setNewNews({ ...newNews, category: e.target.value })}
+                      className="w-full border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:border-accent"
+                    >
+                      <option value="Market Update">Market Update</option>
+                      <option value="Investment Tips">Investment Tips</option>
+                      <option value="Economic News">Economic News</option>
+                      <option value="Company Updates">Company Updates</option>
+                      <option value="Financial Planning">Financial Planning</option>
+                    </select>
                   </div>
                 </div>
                 <div>
