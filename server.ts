@@ -9,6 +9,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import Database from "better-sqlite3";
+import { v2 as cloudinary } from "cloudinary";
+import pg from "pg";
 
 console.log("[SERVER] Script starting...");
 dotenv.config();
@@ -18,29 +20,78 @@ const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 
-// Initialize SQLite Database
-const dbPath = path.join(__dirname, "database", "trustline.db");
-if (!fs.existsSync(path.join(__dirname, "database"))) {
-  fs.mkdirSync(path.join(__dirname, "database"));
+// --- DATABASE INITIALIZATION ---
+const isPostgres = !!process.env.DATABASE_URL;
+let db: any;
+let pgPool: pg.Pool | null = null;
+
+if (isPostgres) {
+  console.log("[DATABASE] Using PostgreSQL");
+  pgPool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+} else {
+  console.log("[DATABASE] Using SQLite");
+  const dbPath = path.join(__dirname, "database", "trustline.db");
+  if (!fs.existsSync(path.join(__dirname, "database"))) {
+    fs.mkdirSync(path.join(__dirname, "database"));
+  }
+  db = new Database(dbPath);
 }
-const db = new Database(dbPath);
+
+// Database Helper Functions
+async function dbQuery(sql: string, params: any[] = []) {
+  if (isPostgres && pgPool) {
+    const res = await pgPool.query(sql.replace(/\?/g, (_, i) => `$${i + 1}`), params);
+    return res.rows;
+  } else {
+    return db.prepare(sql).all(...params);
+  }
+}
+
+async function dbGet(sql: string, params: any[] = []) {
+  if (isPostgres && pgPool) {
+    const res = await pgPool.query(sql.replace(/\?/g, (_, i) => `$${i + 1}`), params);
+    return res.rows[0];
+  } else {
+    return db.prepare(sql).get(...params);
+  }
+}
+
+async function dbRun(sql: string, params: any[] = []) {
+  if (isPostgres && pgPool) {
+    return await pgPool.query(sql.replace(/\?/g, (_, i) => `$${i + 1}`), params);
+  } else {
+    return db.prepare(sql).run(...params);
+  }
+}
+
+async function dbExec(sql: string) {
+  if (isPostgres && pgPool) {
+    // Split multiple statements for Postgres if necessary, or just run as is if simple
+    return await pgPool.query(sql);
+  } else {
+    return db.exec(sql);
+  }
+}
 
 // Create tables if they don't exist
-db.exec(`
+const initSql = `
   CREATE TABLE IF NOT EXISTS admin (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     key TEXT UNIQUE NOT NULL,
     value TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
     min_investment REAL,
@@ -55,11 +106,11 @@ db.exec(`
     rate_3m REAL,
     rate_6m REAL,
     rate_12m REAL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS news (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
     content TEXT,
@@ -67,68 +118,86 @@ db.exec(`
     image_url TEXT,
     date TEXT,
     category TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS team (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     role TEXT NOT NULL,
     image_url TEXT,
     category TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS gallery (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     image_url TEXT NOT NULL,
     caption TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS staff_gallery (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     image_url TEXT NOT NULL,
     caption TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS testimonials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     image_url TEXT,
     rating REAL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS tailored_investments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
     image_url TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS contacts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     first_name TEXT NOT NULL,
     last_name TEXT,
     email TEXT NOT NULL,
     message TEXT NOT NULL,
     is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
-`);
+`;
+
+// Adjust SQL for SQLite if not Postgres
+const finalInitSql = isPostgres ? initSql : initSql.replace(/SERIAL PRIMARY KEY/g, "INTEGER PRIMARY KEY AUTOINCREMENT").replace(/TIMESTAMP/g, "DATETIME");
+
+await dbExec(finalInitSql);
 
 // Seed default admin if not exists
-const adminCount = db.prepare("SELECT COUNT(*) as count FROM admin").get() as { count: number };
-if (adminCount.count === 0) {
+const adminCount = await dbGet("SELECT COUNT(*) as count FROM admin") as { count: number | string };
+if (Number(adminCount.count) === 0) {
   const hashedPassword = bcrypt.hashSync("admin123", 10);
-  db.prepare("INSERT INTO admin (email, password) VALUES (?, ?)").run("admin@trustline.com", hashedPassword);
-  db.prepare("INSERT INTO admin (email, password) VALUES (?, ?)").run("fidelisemus@gmail.com", hashedPassword);
+  await dbRun("INSERT INTO admin (email, password) VALUES (?, ?)", ["admin@trustline.com", hashedPassword]);
+  await dbRun("INSERT INTO admin (email, password) VALUES (?, ?)", ["fidelisemus@gmail.com", hashedPassword]);
   console.log("[SERVER] Default admins created: admin@trustline.com and fidelisemus@gmail.com / admin123");
+}
+
+// --- CLOUDINARY INITIALIZATION ---
+const isCloudinary = !!process.env.CLOUDINARY_CLOUD_NAME;
+if (isCloudinary) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+  console.log("[STORAGE] Using Cloudinary");
+} else {
+  console.log("[STORAGE] Using Local Filesystem");
 }
 
 async function startServer() {
@@ -231,7 +300,7 @@ async function startServer() {
     }
 
     try {
-      const admin = db.prepare("SELECT * FROM admin WHERE email = ?").get(email.toLowerCase()) as any;
+      const admin = await dbGet("SELECT * FROM admin WHERE email = ?", [email.toLowerCase()]) as any;
       
       if (admin && await bcrypt.compare(password, admin.password)) {
         const token = jwt.sign({ id: admin.id, email: admin.email, role: 'admin' }, JWT_SECRET);
@@ -257,7 +326,7 @@ async function startServer() {
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM settings").all() as any[];
+      const rows = await dbQuery("SELECT * FROM settings") as any[];
       const settings: any = {};
       rows.forEach(row => {
         if (row.key === 'core_values') {
@@ -277,14 +346,14 @@ async function startServer() {
   app.post("/api/admin/settings", authenticateAdmin, async (req, res) => {
     const settings = req.body;
     try {
-      const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
-      const transaction = db.transaction((settingsObj) => {
-        for (const [key, value] of Object.entries(settingsObj)) {
-          const val = key === 'core_values' ? JSON.stringify(value) : String(value);
-          stmt.run(key, val);
+      for (const [key, value] of Object.entries(settings)) {
+        const val = key === 'core_values' ? JSON.stringify(value) : String(value);
+        if (isPostgres) {
+          await dbRun("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [key, val]);
+        } else {
+          await dbRun("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, val]);
         }
-      });
-      transaction(settings);
+      }
       res.json({ success: true });
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -295,7 +364,7 @@ async function startServer() {
   // Products: Get All
   app.get("/api/products", async (req, res) => {
     try {
-      const products = db.prepare("SELECT * FROM products ORDER BY title ASC").all();
+      const products = await dbQuery("SELECT * FROM products ORDER BY title ASC");
       res.json(products);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch products" });
@@ -310,12 +379,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE products SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE products SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO products (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO products (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -327,7 +396,7 @@ async function startServer() {
   // Admin: Delete Product
   app.delete("/api/admin/products/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM products WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete product" });
@@ -337,9 +406,10 @@ async function startServer() {
   // News: Get All
   app.get("/api/news", async (req, res) => {
     try {
-      const news = db.prepare("SELECT * FROM news ORDER BY date DESC").all();
+      const news = await dbQuery('SELECT * FROM news ORDER BY "date" DESC');
       res.json(news);
     } catch (error) {
+      console.error("Error fetching news:", error);
       res.status(500).json({ success: false, error: "Failed to fetch news" });
     }
   });
@@ -352,12 +422,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE news SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE news SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO news (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO news (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -368,7 +438,7 @@ async function startServer() {
   // Admin: Delete News
   app.delete("/api/admin/news/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM news WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM news WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete news" });
@@ -378,7 +448,7 @@ async function startServer() {
   // Team: Get All
   app.get("/api/team", async (req, res) => {
     try {
-      const team = db.prepare("SELECT * FROM team").all();
+      const team = await dbQuery("SELECT * FROM team");
       res.json(team);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch team" });
@@ -393,12 +463,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE team SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE team SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO team (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO team (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -409,7 +479,7 @@ async function startServer() {
   // Admin: Delete Team Member
   app.delete("/api/admin/team/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM team WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM team WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete team member" });
@@ -419,7 +489,7 @@ async function startServer() {
   // Gallery: Get All
   app.get("/api/gallery", async (req, res) => {
     try {
-      const items = db.prepare("SELECT * FROM gallery").all();
+      const items = await dbQuery("SELECT * FROM gallery");
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch gallery" });
@@ -434,12 +504,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE gallery SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE gallery SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO gallery (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO gallery (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -450,7 +520,7 @@ async function startServer() {
   // Admin: Delete Gallery Item
   app.delete("/api/admin/gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM gallery WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM gallery WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete gallery item" });
@@ -460,7 +530,7 @@ async function startServer() {
   // Staff Gallery: Get All
   app.get("/api/staff-gallery", async (req, res) => {
     try {
-      const items = db.prepare("SELECT * FROM staff_gallery").all();
+      const items = await dbQuery("SELECT * FROM staff_gallery");
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch staff gallery" });
@@ -475,12 +545,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE staff_gallery SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE staff_gallery SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO staff_gallery (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO staff_gallery (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -491,7 +561,7 @@ async function startServer() {
   // Admin: Delete Staff Gallery Item
   app.delete("/api/admin/staff-gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM staff_gallery WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM staff_gallery WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete staff gallery item" });
@@ -501,7 +571,7 @@ async function startServer() {
   // Testimonials: Get All
   app.get("/api/testimonials", async (req, res) => {
     try {
-      const items = db.prepare("SELECT * FROM testimonials").all();
+      const items = await dbQuery("SELECT * FROM testimonials");
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch testimonials" });
@@ -516,12 +586,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE testimonials SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE testimonials SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO testimonials (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO testimonials (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -532,7 +602,7 @@ async function startServer() {
   // Admin: Delete Testimonial
   app.delete("/api/admin/testimonials/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM testimonials WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM testimonials WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete testimonial" });
@@ -542,7 +612,7 @@ async function startServer() {
   // Tailored Investments: Get All
   app.get("/api/tailored-investments", async (req, res) => {
     try {
-      const items = db.prepare("SELECT * FROM tailored_investments").all();
+      const items = await dbQuery("SELECT * FROM tailored_investments");
       res.json(items);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch tailored investments" });
@@ -557,12 +627,12 @@ async function startServer() {
         const keys = Object.keys(data);
         const setClause = keys.map(k => `${k} = ?`).join(", ");
         const values = Object.values(data);
-        db.prepare(`UPDATE tailored_investments SET ${setClause} WHERE id = ?`).run(...values, id);
+        await dbRun(`UPDATE tailored_investments SET ${setClause} WHERE id = ?`, [...values, id]);
       } else {
         const keys = Object.keys(data);
         const placeholders = keys.map(() => "?").join(", ");
         const values = Object.values(data);
-        db.prepare(`INSERT INTO tailored_investments (${keys.join(", ")}) VALUES (${placeholders})`).run(...values);
+        await dbRun(`INSERT INTO tailored_investments (${keys.join(", ")}) VALUES (${placeholders})`, values);
       }
       res.json({ success: true });
     } catch (error) {
@@ -573,7 +643,7 @@ async function startServer() {
   // Admin: Delete Tailored Investment
   app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM tailored_investments WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM tailored_investments WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete tailored investment" });
@@ -583,7 +653,7 @@ async function startServer() {
   // Admin: Get All Contacts/Messages
   app.get("/api/admin/contacts", authenticateAdmin, async (req, res) => {
     try {
-      const contacts = db.prepare("SELECT * FROM contacts ORDER BY created_at DESC").all();
+      const contacts = await dbQuery("SELECT * FROM contacts ORDER BY created_at DESC");
       res.json(contacts);
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to fetch contacts" });
@@ -593,7 +663,7 @@ async function startServer() {
   // Admin: Mark Contact as Read
   app.patch("/api/admin/contacts/:id/read", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("UPDATE contacts SET is_read = 1 WHERE id = ?").run(req.params.id);
+      await dbRun("UPDATE contacts SET is_read = 1 WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to mark message as read" });
@@ -603,7 +673,7 @@ async function startServer() {
   // Admin: Delete Contact
   app.delete("/api/admin/contacts/:id", authenticateAdmin, async (req, res) => {
     try {
-      db.prepare("DELETE FROM contacts WHERE id = ?").run(req.params.id);
+      await dbRun("DELETE FROM contacts WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete contact" });
@@ -617,8 +687,7 @@ async function startServer() {
       const keys = Object.keys(data);
       const placeholders = keys.map(() => "?").join(", ");
       const values = Object.values(data);
-      db.prepare(`INSERT INTO contacts (${keys.join(", ")}, is_read, created_at) VALUES (${placeholders}, 0, ?)`)
-        .run(...values, new Date().toISOString());
+      await dbRun(`INSERT INTO contacts (${keys.join(", ")}, is_read, created_at) VALUES (${placeholders}, 0, ?)`, [...values, new Date().toISOString()]);
       res.json({ success: true });
     } catch (error) {
       console.error("Error submitting contact:", error);
@@ -627,10 +696,25 @@ async function startServer() {
   });
 
   // Admin: Upload Image
-  app.post("/api/admin/upload", authenticateAdmin, upload.single('image'), (req: any, res) => {
+  app.post("/api/admin/upload", authenticateAdmin, upload.single('image'), async (req: any, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: "No file uploaded" });
-    const imageUrl = `/uploads/${req.file.filename}`;
-    res.json({ success: true, imageUrl });
+    
+    try {
+      if (isCloudinary) {
+        const result = await cloudinary.uploader.upload(req.file.path, {
+          folder: "trustline"
+        });
+        // Remove local file after upload to Cloudinary
+        fs.unlinkSync(req.file.path);
+        res.json({ success: true, imageUrl: result.secure_url });
+      } else {
+        const imageUrl = `/uploads/${req.file.filename}`;
+        res.json({ success: true, imageUrl });
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      res.status(500).json({ success: false, error: "Upload failed" });
+    }
   });
 
   // --- API CATCH-ALL ---

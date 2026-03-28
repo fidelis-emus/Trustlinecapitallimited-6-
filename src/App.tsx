@@ -58,28 +58,28 @@ const NEWS_ITEMS = [
     id: 1,
     title: "Global Market Trends in 2026",
     description: "An in-depth look at how emerging markets are shaping the global financial landscape this year.",
-    image: "https://picsum.photos/seed/market/800/600",
+    image_url: "https://picsum.photos/seed/market/800/600",
     date: "March 20, 2026"
   },
   {
     id: 2,
     title: "The Rise of Sustainable Investing",
     description: "Why ESG criteria are becoming a cornerstone for modern portfolio management and long-term growth.",
-    image: "https://picsum.photos/seed/green/800/600",
+    image_url: "https://picsum.photos/seed/green/800/600",
     date: "March 15, 2026"
   },
   {
     id: 3,
     title: "Understanding Fixed Income Assets",
     description: "A comprehensive guide to navigating the bond market and securing stable returns in volatile times.",
-    image: "https://picsum.photos/seed/finance/800/600",
+    image_url: "https://picsum.photos/seed/finance/800/600",
     date: "March 10, 2026"
   },
   {
     id: 4,
     title: "Digital Transformation in Asset Management",
     description: "How technology and AI are revolutionizing the way we analyze data and manage client wealth.",
-    image: "https://picsum.photos/seed/tech/800/600",
+    image_url: "https://picsum.photos/seed/tech/800/600",
     date: "March 05, 2026"
   }
 ];
@@ -1599,7 +1599,7 @@ function TeamCard({ member }: { member: TeamMember, key?: any }) {
 
 function CalculatorPage({ products, key }: { products: Product[], key?: string }) {
   const [amount, setAmount] = useState<number>(1000);
-  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || "");
+  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id?.toString() || "");
   const [duration, setDuration] = useState<number>(12);
   const [result, setResult] = useState<{ 
     total: number, 
@@ -1609,11 +1609,17 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
   } | null>(null);
 
   const calculate = () => {
-    const product = products.find(p => p.id === selectedProductId);
-    if (!product) return;
+    console.log("Calculating returns for product ID:", selectedProductId);
+    const product = products.find(p => String(p.id) === String(selectedProductId));
+    console.log("Found product:", product);
+    
+    if (!product) {
+      console.error("Product not found for ID:", selectedProductId);
+      return;
+    }
     
     // Use specific rate based on duration if available, otherwise fallback to expected_return
-    let annualRate = product.expected_return;
+    let annualRate = product.expected_return || 0;
     if (duration === 3 && product.rate_3m) annualRate = product.rate_3m;
     else if (duration === 6 && product.rate_6m) annualRate = product.rate_6m;
     else if (duration === 12 && product.rate_12m) annualRate = product.rate_12m;
@@ -1633,16 +1639,16 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
   useEffect(() => {
     if (products.length > 0) {
       const firstProduct = products[0];
-      setSelectedProductId(firstProduct.id);
-      setDuration(firstProduct.duration_months);
+      setSelectedProductId(String(firstProduct.id));
+      setDuration(firstProduct.duration_months || 12);
     }
   }, [products]);
 
   const handleProductChange = (productId: string) => {
     setSelectedProductId(productId);
-    const product = products.find(p => p.id === productId);
+    const product = products.find(p => String(p.id) === String(productId));
     if (product) {
-      setDuration(product.duration_months);
+      setDuration(product.duration_months || 12);
     }
   };
 
@@ -1660,7 +1666,7 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
               <div>
                 <label className="block text-sm font-medium text-white/60 mb-2">Investment Amount</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-3 text-white/40">{products.find(p => p.id === selectedProductId)?.currency || '₦'}</span>
+                  <span className="absolute left-4 top-3 text-white/40">{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}</span>
                   <input 
                     type="number" 
                     value={amount} 
@@ -1709,14 +1715,14 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
             {result ? (
               <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full">
                 <div className="text-sm font-bold uppercase tracking-widest mb-2 opacity-60">Maturity Value</div>
-                <div className="text-4xl font-bold mb-8">{products.find(p => p.id === selectedProductId)?.currency || '₦'}{result.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-4xl font-bold mb-8">{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}{result.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 
                 <div className="space-y-3 w-full border-t border-primary/10 pt-8 text-left">
                   <div className="flex justify-between items-center text-sm">
                     <span className="opacity-60">Interest Rate</span>
                     <span className="font-bold">
                       {(() => {
-                        const product = products.find(p => p.id === selectedProductId);
+                        const product = products.find(p => String(p.id) === String(selectedProductId));
                         if (!product) return '0%';
                         let annualRate = product.expected_return;
                         if (duration === 3 && product.rate_3m) annualRate = product.rate_3m;
@@ -1728,19 +1734,19 @@ function CalculatorPage({ products, key }: { products: Product[], key?: string }
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="opacity-60">Principal</span>
-                    <span className="font-bold">{products.find(p => p.id === selectedProductId)?.currency || '₦'}{amount.toLocaleString()}</span>
+                    <span className="font-bold">{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}{amount.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="opacity-60">Gross Interest</span>
-                    <span className="font-bold">{products.find(p => p.id === selectedProductId)?.currency || '₦'}{result.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-bold">{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}{result.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm text-red-600">
                     <span className="opacity-60">Withholding Tax (10%)</span>
-                    <span className="font-bold">-{products.find(p => p.id === selectedProductId)?.currency || '₦'}{result.tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-bold">-{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}{result.tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm border-t border-primary/5 pt-2">
                     <span className="opacity-60 font-bold">Net Interest</span>
-                    <span className="font-bold">{products.find(p => p.id === selectedProductId)?.currency || '₦'}{result.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-bold">{products.find(p => String(p.id) === String(selectedProductId))?.currency || '₦'}{result.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </motion.div>
