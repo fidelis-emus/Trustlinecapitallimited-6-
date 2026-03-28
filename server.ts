@@ -8,8 +8,11 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import admin from "firebase-admin";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
+console.log("[SERVER] Script starting...");
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,22 +23,16 @@ const JWT_SECRET = process.env.JWT_SECRET || "trustline-secret-key-2026";
 // Load Firebase Config
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-applet-config.json"), "utf8"));
 
-// Initialize Firebase Admin
-admin.initializeApp({
-  projectId: firebaseConfig.projectId,
-});
-
-const db = admin.firestore();
-if (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)') {
-  // Note: In some environments, you might need to specify the databaseId differently
-  // but for standard Firebase Admin, it usually uses the default or you'd use a different initialization
-}
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const auth = getAuth(app);
 
 // Test Connection
 async function testConnection() {
   try {
-    await db.collection('test').doc('connection').get();
-    console.log("Firestore connected successfully via Admin SDK.");
+    await getDoc(doc(db, 'test', 'connection'));
+    console.log("Firestore connected successfully via Client SDK.");
   } catch (error) {
     console.error("Firestore connection error:", error);
   }
@@ -98,14 +95,16 @@ async function startServer() {
   };
 
   // Admin: Login
+  app.get("/api/admin/login", (req, res) => res.json({ success: false, error: "POST required" }));
   app.post("/api/admin/login", async (req, res) => {
+    console.log(`[LOGIN] Attempt for: ${req.body.email}`);
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, error: "Email and password required" });
 
     try {
       // Check for default admin
       if (email.toLowerCase() === "fidelisemus@gmail.com" || email.toLowerCase() === "admin@trustline.com") {
-        const adminSnap = await db.collection("admin").where("email", "==", email.toLowerCase()).get();
+        const adminSnap = await getDocs(query(collection(db, "admin"), where("email", "==", email.toLowerCase())));
         
         let adminData: any = null;
         if (!adminSnap.empty) {
@@ -114,7 +113,7 @@ async function startServer() {
           // Fallback for initial setup if Firestore is empty
           const hashedPassword = await bcrypt.hash("admin123", 10);
           adminData = { email: "admin@trustline.com", password: hashedPassword };
-          const docRef = await db.collection("admin").add(adminData);
+          const docRef = await addDoc(collection(db, "admin"), adminData);
           adminData.id = docRef.id;
         }
 
@@ -130,31 +129,10 @@ async function startServer() {
     }
   });
 
-  // Admin: Get Profile
-  app.get("/api/admin/profile", authenticateToken, async (req, res) => {
-    try {
-      const adminSnap = await db.collection("admin").doc(req.user.id).get();
-      const adminData = adminSnap.data();
-      
-      res.json({
-        success: true,
-        user: {
-          id: req.user.id,
-          email: req.user.email,
-          role: req.user.role,
-          ...adminData
-        }
-      });
-    } catch (error) {
-      console.error("Profile fetch error:", error);
-      res.status(500).json({ success: false, error: "Failed to fetch profile" });
-    }
-  });
-
   // Settings: Get All
   app.get("/api/settings", async (req, res) => {
     try {
-      const snap = await db.collection("settings").get();
+      const snap = await getDocs(collection(db, "settings"));
       const settings: any = {};
       snap.forEach(doc => {
         const data = doc.data();
@@ -166,6 +144,7 @@ async function startServer() {
       });
       res.json(settings);
     } catch (error) {
+      console.error("Error fetching settings:", error);
       res.status(500).json({ success: false, error: "Failed to fetch settings" });
     }
   });
@@ -175,12 +154,12 @@ async function startServer() {
     const settings = req.body;
     try {
       for (const [key, value] of Object.entries(settings)) {
-        const snap = await db.collection("settings").where("key", "==", key).get();
+        const snap = await getDocs(query(collection(db, "settings"), where("key", "==", key)));
         const val = key === 'core_values' ? JSON.stringify(value) : String(value);
         if (!snap.empty) {
-          await db.collection("settings").doc(snap.docs[0].id).update({ value: val });
+          await updateDoc(doc(db, "settings", snap.docs[0].id), { value: val });
         } else {
-          await db.collection("settings").add({ key, value: val });
+          await addDoc(collection(db, "settings"), { key, value: val });
         }
       }
       res.json({ success: true });
@@ -192,7 +171,7 @@ async function startServer() {
   // Products: Get All
   app.get("/api/products", async (req, res) => {
     try {
-      const snap = await db.collection("products").orderBy("title", "asc").get();
+      const snap = await getDocs(query(collection(db, "products"), orderBy("title", "asc")));
       const products = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(products);
     } catch (error) {
@@ -205,9 +184,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("products").doc(id).update(data);
+        await updateDoc(doc(db, "products", id), data);
       } else {
-        await db.collection("products").add(data);
+        await addDoc(collection(db, "products"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -218,7 +197,7 @@ async function startServer() {
   // Admin: Delete Product
   app.delete("/api/admin/products/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("products").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "products", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete product" });
@@ -228,7 +207,7 @@ async function startServer() {
   // News: Get All
   app.get("/api/news", async (req, res) => {
     try {
-      const snap = await db.collection("news").orderBy("published_date", "desc").get();
+      const snap = await getDocs(query(collection(db, "news"), orderBy("published_date", "desc")));
       const news = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(news);
     } catch (error) {
@@ -241,9 +220,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("news").doc(id).update(data);
+        await updateDoc(doc(db, "news", id), data);
       } else {
-        await db.collection("news").add(data);
+        await addDoc(collection(db, "news"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -254,7 +233,7 @@ async function startServer() {
   // Admin: Delete News
   app.delete("/api/admin/news/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("news").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "news", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete news" });
@@ -264,7 +243,7 @@ async function startServer() {
   // Team: Get All
   app.get("/api/team", async (req, res) => {
     try {
-      const snap = await db.collection("team").get();
+      const snap = await getDocs(collection(db, "team"));
       const team = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(team);
     } catch (error) {
@@ -277,9 +256,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("team").doc(id).update(data);
+        await updateDoc(doc(db, "team", id), data);
       } else {
-        await db.collection("team").add(data);
+        await addDoc(collection(db, "team"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -290,7 +269,7 @@ async function startServer() {
   // Admin: Delete Team Member
   app.delete("/api/admin/team/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("team").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "team", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete team member" });
@@ -300,7 +279,7 @@ async function startServer() {
   // Gallery: Get All
   app.get("/api/gallery", async (req, res) => {
     try {
-      const snap = await db.collection("gallery").get();
+      const snap = await getDocs(collection(db, "gallery"));
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -313,9 +292,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("gallery").doc(id).update(data);
+        await updateDoc(doc(db, "gallery", id), data);
       } else {
-        await db.collection("gallery").add(data);
+        await addDoc(collection(db, "gallery"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -326,7 +305,7 @@ async function startServer() {
   // Admin: Delete Gallery Item
   app.delete("/api/admin/gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("gallery").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "gallery", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete gallery item" });
@@ -336,7 +315,7 @@ async function startServer() {
   // Staff Gallery: Get All
   app.get("/api/staff-gallery", async (req, res) => {
     try {
-      const snap = await db.collection("staff_gallery").get();
+      const snap = await getDocs(collection(db, "staff_gallery"));
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -349,9 +328,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("staff_gallery").doc(id).update(data);
+        await updateDoc(doc(db, "staff_gallery", id), data);
       } else {
-        await db.collection("staff_gallery").add(data);
+        await addDoc(collection(db, "staff_gallery"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -362,7 +341,7 @@ async function startServer() {
   // Admin: Delete Staff Gallery Item
   app.delete("/api/admin/staff-gallery/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("staff_gallery").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "staff_gallery", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete staff gallery item" });
@@ -372,7 +351,7 @@ async function startServer() {
   // Testimonials: Get All
   app.get("/api/testimonials", async (req, res) => {
     try {
-      const snap = await db.collection("testimonials").get();
+      const snap = await getDocs(collection(db, "testimonials"));
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -385,9 +364,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("testimonials").doc(id).update(data);
+        await updateDoc(doc(db, "testimonials", id), data);
       } else {
-        await db.collection("testimonials").add(data);
+        await addDoc(collection(db, "testimonials"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -398,7 +377,7 @@ async function startServer() {
   // Admin: Delete Testimonial
   app.delete("/api/admin/testimonials/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("testimonials").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "testimonials", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete testimonial" });
@@ -408,7 +387,7 @@ async function startServer() {
   // Tailored Investments: Get All
   app.get("/api/tailored-investments", async (req, res) => {
     try {
-      const snap = await db.collection("tailored_investments").get();
+      const snap = await getDocs(collection(db, "tailored_investments"));
       const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(items);
     } catch (error) {
@@ -421,9 +400,9 @@ async function startServer() {
     const { id, ...data } = req.body;
     try {
       if (id) {
-        await db.collection("tailored_investments").doc(id).update(data);
+        await updateDoc(doc(db, "tailored_investments", id), data);
       } else {
-        await db.collection("tailored_investments").add(data);
+        await addDoc(collection(db, "tailored_investments"), data);
       }
       res.json({ success: true });
     } catch (error) {
@@ -434,7 +413,7 @@ async function startServer() {
   // Admin: Delete Tailored Investment
   app.delete("/api/admin/tailored-investments/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("tailored_investments").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "tailored_investments", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete tailored investment" });
@@ -444,7 +423,7 @@ async function startServer() {
   // Admin: Get All Contacts/Messages
   app.get("/api/admin/contacts", authenticateAdmin, async (req, res) => {
     try {
-      const snap = await db.collection("contacts").orderBy("created_at", "desc").get();
+      const snap = await getDocs(query(collection(db, "contacts"), orderBy("created_at", "desc")));
       const contacts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(contacts);
     } catch (error) {
@@ -455,7 +434,7 @@ async function startServer() {
   // Admin: Mark Contact as Read
   app.patch("/api/admin/contacts/:id/read", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("contacts").doc(req.params.id).update({ is_read: true });
+      await updateDoc(doc(db, "contacts", req.params.id), { is_read: true });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to mark message as read" });
@@ -465,7 +444,7 @@ async function startServer() {
   // Admin: Delete Contact
   app.delete("/api/admin/contacts/:id", authenticateAdmin, async (req, res) => {
     try {
-      await db.collection("contacts").doc(req.params.id).delete();
+      await deleteDoc(doc(db, "contacts", req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to delete contact" });
@@ -476,7 +455,7 @@ async function startServer() {
   app.post("/api/contacts", async (req, res) => {
     const data = { ...req.body, is_read: false, created_at: new Date().toISOString() };
     try {
-      await db.collection("contacts").add(data);
+      await addDoc(collection(db, "contacts"), data);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: "Failed to submit message" });
@@ -490,11 +469,6 @@ async function startServer() {
     res.json({ success: true, imageUrl });
   });
 
-  // 404 Handler for API routes (must come before SPA fallback)
-  app.use("/api/*", (req, res) => {
-    res.status(404).json({ success: false, error: "API endpoint not found" });
-  });
-
   // --- VITE MIDDLEWARE ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
@@ -502,17 +476,10 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    // SPA fallback: Serve index.html only for non-API routes
-    app.get("*", (req, res) => {
-      if (!req.path.startsWith("/api")) {
-        res.sendFile(path.join(distPath, "index.html"));
-      } else {
-        res.status(404).json({ success: false, error: "API endpoint not found" });
-      }
-    });
+    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
   app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
 }
 
