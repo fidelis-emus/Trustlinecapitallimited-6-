@@ -994,9 +994,6 @@ function HomePage({ setPage, products, news, settings, setSelectedNews, testimon
       {/* Tailored Investments Section */}
       <TailoredInvestmentsSection tailoredInvestments={tailoredInvestments} />
 
-      {/* News Section */}
-      <NewsSection setPage={setPage} setSelectedNews={setSelectedNews} news={news} />
-
       {/* Highlights */}
       <section className="py-24 bg-slate-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1056,12 +1053,6 @@ function HomePage({ setPage, products, news, settings, setSelectedNews, testimon
         </div>
       </section>
 
-      {/* News Section */}
-      <NewsSection setPage={setPage} setSelectedNews={setSelectedNews} news={news} />
-
-      {/* Tailored Investments Section */}
-      <TailoredInvestmentsSection tailoredInvestments={tailoredInvestments} />
-
       {/* Testimonials Section */}
       <section className="py-24 bg-slate-50 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1107,6 +1098,9 @@ function HomePage({ setPage, products, news, settings, setSelectedNews, testimon
           </div>
         </div>
       </section>
+
+      {/* News Section - Placed just before CTA/Footer */}
+      <NewsSection setPage={setPage} setSelectedNews={setSelectedNews} news={news} />
 
       {/* CTA Section */}
       <section className="py-20 bg-primary text-white text-center">
